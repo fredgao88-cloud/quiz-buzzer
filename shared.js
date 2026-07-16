@@ -19,6 +19,18 @@ const TEAM_COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7'];
 
 const ROUND_CAPS = { r1: 20, r2: 20, r3: null, r4: 10, r5: null };
 
+// R3 读题期抢跑的处罚分。这是对「抢跑」这一行为的处罚，与题目分值无关，
+// 因此不读 q.score_wrong（那是「答错」的分值）。赛制若调整违规标准，改这里。
+const R3_VIOLATION_PENALTY = -2;
+
+// R4 每张图的找茬点上限，超过后 UI 拒绝继续勾选（与 ROUND_CAPS.r4 同值但语义不同：
+// 前者是单图点数上限，后者是队伍在本环节的累计得分上限）
+const R4_MAX_SPOTS = 10;
+
+// R5 评委未录入答案内容时的占位符。它不是真实答案，不参与查重
+// （否则两队都留空会被判成互相重复）
+const R5_BLANK_ANSWER = '（未录入）';
+
 // ── BroadcastChannel ──────────────────────────────
 let bc = null;
 try { bc = new BroadcastChannel(BC_NAME); } catch(e) {}
@@ -866,8 +878,11 @@ function scoreR1(correct) {
   const baseScore = q?.score_correct ?? 2.5;
   const delta     = correct ? baseScore : 0;
 
+  // 队伍分走上限裁剪；个人分记裁剪【前】的真实得分。
+  // 二者解耦的原因：R1 满分 20 = 4人×2题×2.5分，全队全对必然触顶，
+  // 若个人分也跟着裁剪，恰恰是表现最好的队伍评不出「最佳个人」。
   const actual = applyTeamScore(team.id, 'r1', delta);
-  team.memberScores[memberIdx] = (team.memberScores[memberIdx] || 0) + actual;
+  team.memberScores[memberIdx] = (team.memberScores[memberIdx] || 0) + delta;
 
   const event = {
     round:      1,
@@ -876,7 +891,9 @@ function scoreR1(correct) {
     memberIdx,
     memberName: team.members[memberIdx],
     correct,
-    delta:      actual,
+    delta:      actual,   // 队伍实际入账（裁剪后）
+    memberDelta: delta,   // 个人实际入账（裁剪前）；封顶后二者会不等
+    capped:     delta !== actual,
     reason:     correct ? 'correct' : 'wrong',
     qId:        q?.id,
     ts:         Date.now(),
@@ -1058,11 +1075,11 @@ function r3EarlyBuzz(teamId, onDone) {
   if (!team) return false;
   // 暂停 TTS
   if (window.IS_CONTROL) stopSpeak();
-  // 扣分
-  applyTeamScore(team.id, 'r3', -2);
+  // 扣分：违规是行为处罚，用固定常量，不读题库分值
+  const delta = applyTeamScore(team.id, 'r3', R3_VIOLATION_PENALTY);
   const event = {
     round: 3, teamId: team.id, teamName: team.name,
-    correct: false, delta: -2, reason: 'violation',
+    correct: false, delta, reason: 'violation',
     ts: Date.now(),
   };
   logEvent(event, true); // skipAnnounce
@@ -1158,6 +1175,42 @@ function r3SelectMember(memberIdx) {
   save();
 }
 
+/**
+ * 第三环节超时判定（业务规则，供控制台的手动"超时"按钮与倒计时归零共用）
+ *
+ * 只负责【扣分 + 记事件 + 清抢答状态】，不做语音与补抢决策——
+ * 那些属于流程编排，留给调用方（见 index.html r3AutoTimeout / doR3Timeout）。
+ *
+ * 返回 ScoreEvent；非 locked 状态（无人抢答）返回 null。
+ * skipAnnounce=true：调用方自行播报，避免与 announceScore 双重发声。
+ */
+function r3Timeout(skipAnnounce = true) {
+  if (state.r3.buzzState !== 'locked') return null;
+  const team = getTeam(state.r3.selectedTeam);
+  if (!team) return null;
+  const q     = state.r3.currentQIdx != null ? state.questions[state.r3.currentQIdx] : null;
+  const delta = applyTeamScore(team.id, 'r3', q?.score_wrong ?? -2);
+  const event = {
+    round: 3, teamId: team.id, teamName: team.name,
+    memberIdx: state.r3.selectedMember,
+    correct: false, delta, reason: 'timeout',
+    qId: q?.id, ts: Date.now(),
+  };
+  logEvent(event, skipAnnounce);
+  state.showScoresOnDisplay = true;
+  save();
+  return event;
+}
+
+/** 清空抢答状态回到 idle（供超时/重置复用） */
+function r3ResetBuzz() {
+  state.r3.buzzState      = 'idle';
+  state.r3.buzzedTeam     = null;
+  state.r3.selectedTeam   = null;
+  state.r3.selectedMember = null;
+  save();
+}
+
 // =====================================================
 // 第四环节 — 识图找茬
 // =====================================================
@@ -1176,20 +1229,42 @@ function initR4() {
   save();
 }
 
+/** 当前已认定的找茬点总数（勾选 + 额外认定） */
+function r4FoundCount() {
+  return Object.values(state.r4.spotJudge).filter(Boolean).length
+       + state.r4.extraSpots.length;
+}
+
 /**
  * 评委勾选找茬点
  * spotKey: string（找茬点标识）
  * found:   boolean
+ * 返回 false = 已达单图上限，本次勾选被拒绝（取消勾选恒允许）
  */
 function r4JudgeSpot(spotKey, found) {
+  // 只拦"新增"，取消勾选必须永远放行，否则满 10 后无法纠错
+  if (found && !state.r4.spotJudge[spotKey] && r4FoundCount() >= R4_MAX_SPOTS) {
+    return false;
+  }
   state.r4.spotJudge[spotKey] = found;
   save();
+  return true;
 }
 
-/** 评委现场认定额外找茬点 */
+/** 评委现场认定额外找茬点；返回 false = 已达上限被拒绝 */
 function r4AddExtraSpot(desc) {
+  if (r4FoundCount() >= R4_MAX_SPOTS) return false;
   state.r4.extraSpots.push({ desc, ts: Date.now() });
   save();
+  return true;
+}
+
+/** 移除额外认定点（满 10 后需要纠错时用） */
+function r4RemoveExtraSpot(idx) {
+  if (idx < 0 || idx >= state.r4.extraSpots.length) return false;
+  state.r4.extraSpots.splice(idx, 1);
+  save();
+  return true;
 }
 
 /**
@@ -1199,8 +1274,7 @@ function r4AddExtraSpot(desc) {
 function scoreR4(teamIdx) {
   const team = getTeamByIdx(teamIdx);
   if (!team) return null;
-  const found  = Object.values(state.r4.spotJudge).filter(Boolean).length
-                 + state.r4.extraSpots.length;
+  const found  = r4FoundCount();
   const actual = applyTeamScore(team.id, 'r4', Math.min(found, ROUND_CAPS.r4));
   const event = {
     round: 4, teamId: team.id, teamName: team.name,
@@ -1242,13 +1316,66 @@ function r5StartTheme(themeIdx) {
 }
 
 /**
+ * 答案归一化（用于比对，不改变展示内容）
+ * 处理：首尾空白、全角→半角、常见中英文标点、大小写、内部空白
+ */
+function normalizeAnswer(s) {
+  return String(s ?? '')
+    .trim()
+    // 全角字母数字空格 → 半角
+    .replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/　/g, ' ')
+    // 去掉常见标点（中英文），避免"不出卖场"与"不出卖场。"判为不同
+    .replace(/[，。、；：！？「」『』（）《》〈〉【】…—～·,.;:!?"'()\[\]{}<>\-_~`]/g, '')
+    // 内部空白折叠后去除
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+/** 该内容是否不具备可比性（空 / 未录入占位符），此类不参与查重 */
+function _r5NotComparable(answer) {
+  const key = normalizeAnswer(answer);
+  return !key || key === normalizeAnswer(R5_BLANK_ANSWER);
+}
+
+/**
+ * 查重：返回已用列表中与 answer 归一化后相同的第一条，无则 null
+ * 空答案与「（未录入）」占位符不参与查重——它们不是真实答案，
+ * 否则两队都留空会被判成互相重复。
+ */
+function r5FindDuplicate(answer) {
+  if (_r5NotComparable(answer)) return null;
+  const key = normalizeAnswer(answer);
+  return (state.r5.usedAnswers || [])
+    .find(a => !_r5NotComparable(a.answer) && normalizeAnswer(a.answer) === key) || null;
+}
+
+/**
  * 有效答案（评委点确认）
  * teamId: 当前答题队伍
  * answer: string 有效内容
+ * opts.force: 跳过查重（评委判定"虽然像但确实不同"时用）
+ *
+ * 返回：
+ *   成功 → ScoreEvent（含 delta:1）
+ *   查重命中且未 force → { duplicate:true, prev:{teamId,teamName,answer,ts} }，**不计分、不推进轮次**
+ *   队伍不存在 → null
  */
-function r5ValidAnswer(teamId, answer) {
+function r5ValidAnswer(teamId, answer, opts = {}) {
   const team = getTeam(teamId);
   if (!team) return null;
+
+  if (!opts.force) {
+    const dup = r5FindDuplicate(answer);
+    if (dup) {
+      const prevTeam = getTeam(dup.teamId);
+      return {
+        duplicate: true,
+        prev: { ...dup, teamName: prevTeam?.name || '?' },
+      };
+    }
+  }
+
   state.r5.usedAnswers.push({ teamId, answer, ts: Date.now() });
   applyTeamScore(team.id, 'r5', 1);
   const event = {

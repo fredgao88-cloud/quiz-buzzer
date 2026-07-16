@@ -672,34 +672,23 @@ function onTimerExpired(round) {
   render();
 }
 
-/** R3 超时：locked=作答超时扣分并视情况开放补抢；armed=无人抢答 */
+/** R3 超时：locked=作答超时扣分并视情况开放补抢；armed=无人抢答
+ *  判分规则在 shared.js r3Timeout()，这里只做语音与补抢的流程编排 */
 function r3AutoTimeout() {
   const bs = state.r3.buzzState;
   if (bs === 'locked') {
-    const team = state.teams.find(t => t.id === state.r3.selectedTeam);
-    const q = state.r3.currentQIdx != null ? state.questions[state.r3.currentQIdx] : null;
-    const wrongScore = q?.score_wrong ?? -2;
-    if (team) {
-      const delta = applyTeamScore(team.id, 'r3', wrongScore);
-      logEvent({ round:3, teamId:team.id, teamName:team.name, correct:false,
-                 delta, reason:'timeout', qId:q?.id, ts:Date.now() }, true);
-    }
-    state.showScoresOnDisplay = true;
-    save();
-    const announce = `${team?.name || ''}，作答超时，扣${scoreToSpeech(Math.abs(wrongScore))}`;
+    const ev = r3Timeout();          // 扣分 + 记事件（skipAnnounce）
+    if (!ev) { render(); return; }
+    const announce = `${ev.teamName}，作答超时，扣${scoreToSpeech(Math.abs(ev.delta))}`;
     if (!state.r3.supplementUsed) {
-      // r3OpenSupplement 要求 locked 状态，播报完再开放补抢
+      // r3OpenSupplement 要求 locked 状态，故播报完再开放补抢（此时状态仍是 locked）
       speakQueue([announce], () => { r3OpenSupplement(); render(); });
     } else {
-      state.r3.buzzState = 'idle'; state.r3.buzzedTeam = null;
-      state.r3.selectedTeam = null; state.r3.selectedMember = null;
-      save();
+      r3ResetBuzz();
       speak(announce);
     }
   } else if (bs === 'armed') {
-    state.r3.buzzState = 'idle'; state.r3.buzzedTeam = null;
-    state.r3.selectedTeam = null; state.r3.selectedMember = null;
-    save();
+    r3ResetBuzz();
     speak('时间到，无人抢答');
   }
   render();
@@ -937,18 +926,33 @@ function renderP4() {
   // 找茬点
   const q = state.r4.currentQIdx != null ? state.questions[state.r4.currentQIdx] : null;
   const spots = (q?.spots?.length ? q.spots : defaultR4Spots());
+  const found = r4FoundCount();
+  const atCap = found >= R4_MAX_SPOTS;
   document.getElementById('r4-spot-grid').innerHTML = spots.map(s => {
     const checked = !!state.r4.spotJudge[s.key];
-    return `<div class="spot-item${checked?' checked':''}" onclick="r4ToggleSpot('${escapeAttr(s.key)}')">
+    // 满额后未勾选的项置灰，明确"点不动"，避免评委反复点击
+    const locked = atCap && !checked;
+    return `<div class="spot-item${checked?' checked':''}"
+        style="${locked?'opacity:.4;cursor:not-allowed':''}"
+        title="${locked?`已满 ${R4_MAX_SPOTS} 处`:''}"
+        onclick="r4ToggleSpot('${escapeAttr(s.key)}')">
       <input type="checkbox" ${checked?'checked':''} style="pointer-events:none">
       <label style="pointer-events:none">${escapeHtml(s.label)}</label>
     </div>`;
   }).join('');
 
   const extras = state.r4.extraSpots || [];
-  document.getElementById('r4-extra-list').textContent = extras.map(e => e.desc).join('、') || '';
-  const found = Object.values(state.r4.spotJudge).filter(Boolean).length + extras.length;
-  document.getElementById('r4-found-count').textContent = `已找 ${found} 处 → 得 ${Math.min(found,10)} 分`;
+  document.getElementById('r4-extra-list').innerHTML = extras.length
+    ? extras.map((e,i) =>
+        `<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 6px;border:1px solid var(--border);border-radius:6px">
+           ${escapeHtml(e.desc)}
+           <a href="javascript:void(0)" onclick="r4DelExtra(${i})" style="color:var(--red);margin-left:4px" title="删除">×</a>
+         </span>`).join('')
+    : '';
+  const cnt = document.getElementById('r4-found-count');
+  cnt.textContent = `已找 ${found} 处 → 得 ${Math.min(found, ROUND_CAPS.r4)} 分`
+                  + (atCap ? `（已满 ${R4_MAX_SPOTS} 处）` : '');
+  cnt.style.color = atCap ? 'var(--yellow)' : '';
 
   renderRoundScores('r4-scores', 'r4');
   document.getElementById('r4-timer-sec').value = state.r4.timerSec;
@@ -1250,9 +1254,16 @@ function doR1(correct) {
   const memberScore = team.memberScores[event.memberIdx] || 0;
   const teamScore = team.scores.r1 || 0;
   const total = teamTotal(team);
-  const resultText = correct
-    ? `回答正确，${memberName}得${scoreToSpeech(event.delta)}，个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`
-    : `回答错误，${memberName}个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
+  let resultText;
+  if (!correct) {
+    resultText = `回答错误，${memberName}个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
+  } else if (event.capped) {
+    // 队伍已封顶：个人分照记，但队伍分不再增长。必须说清楚，否则台下会以为漏计分
+    resultText = `回答正确，${memberName}个人累计${scoreToSpeech(memberScore)}，`
+               + `${team.name}本环节已达上限${scoreToSpeech(teamScore)}，本题不再加分，总分${scoreToSpeech(total)}`;
+  } else {
+    resultText = `回答正确，${memberName}得${scoreToSpeech(event.delta)}，个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
+  }
   speak(resultText);
 }
 function r1InitDeck() { initCardDeck(1); render(); }
@@ -1374,23 +1385,15 @@ function doR3(correct) {
   speak(resultText);
 }
 function doR3Supp() { r3OpenSupplement(); render(); }
+/** 主持人手动点"超时"按钮：判分同 r3Timeout()，但由 announceScore 播报 */
 function doR3Timeout() {
-  // 超时处理：仅在locked状态扣分（分值读题库，兜底 -2）
-  if (state.r3.buzzState === 'locked') {
-    const team = state.teams.find(t=>t.id===state.r3.selectedTeam);
-    const q = state.r3.currentQIdx != null ? state.questions[state.r3.currentQIdx] : null;
-    if (team) {
-      const delta = applyTeamScore(team.id, 'r3', q?.score_wrong ?? -2);
-      logEvent({round:3,teamId:team.id,teamName:team.name,correct:false,delta,reason:'timeout',qId:q?.id,ts:Date.now()});
-    }
-  }
-  state.r3.buzzState = 'idle'; state.r3.buzzedTeam = null;
-  state.r3.selectedTeam = null; state.r3.selectedMember = null;
-  expireTimer(); save(); render();
+  r3Timeout(false);      // skipAnnounce=false → 走 announceScore 的 timeout 话术
+  r3ResetBuzz();
+  expireTimer();
+  render();
 }
 function doR3Reset() {
-  state.r3.buzzState='idle'; state.r3.buzzedTeam=null;
-  state.r3.selectedTeam=null; state.r3.selectedMember=null;
+  r3ResetBuzz();
   stopTimer(); save(); render();
 }
 
@@ -1423,10 +1426,28 @@ function r4Next() {
   }
 }
 function r4StartTimer() { startTimer(state.r4.timerSec*1000, 4); cdSpoken.clear(); }
-function r4ToggleSpot(key) { state.r4.spotJudge[key] = !state.r4.spotJudge[key]; save(); render(); }
+function r4ToggleSpot(key) {
+  // 必须走 r4JudgeSpot()，它带单图 10 处的上限拦截；直接改 state 会绕过规则
+  const next = !state.r4.spotJudge[key];
+  if (!r4JudgeSpot(key, next)) {
+    alert(`本图已认定满 ${R4_MAX_SPOTS} 处，不能再新增。\n如需改判，请先取消其他勾选。`);
+    return;
+  }
+  render();
+}
 function r4AddExtra() {
+  if (r4FoundCount() >= R4_MAX_SPOTS) {
+    return alert(`本图已认定满 ${R4_MAX_SPOTS} 处，不能再新增。`);
+  }
   const desc = prompt('额外认定的违规点描述：');
-  if (desc?.trim()) { r4AddExtraSpot(desc.trim()); render(); }
+  if (desc?.trim()) {
+    if (!r4AddExtraSpot(desc.trim())) alert('已达上限，未添加');
+    render();
+  }
+}
+function r4DelExtra(i) {
+  if (!confirm(`删除额外认定点「${state.r4.extraSpots[i]?.desc || ''}」？`)) return;
+  r4RemoveExtraSpot(i); render();
 }
 function doR4Score() {
   const ev = scoreR4(state.r4.currentTeamIdx);
@@ -1451,8 +1472,37 @@ function r5NextTheme() {
   r5StartTheme(ni); startTimer(state.r5.timerSec*1000, 5); cdSpoken.clear(); render();
 }
 function r5DoValid(teamId) {
-  const ans = prompt('有效内容（可留空）：') ?? '';
-  r5ValidAnswer(teamId, ans || '（未录入）');
+  const ans = prompt('有效内容（留空则不参与查重）：');
+  if (ans === null) return;                       // 取消，不推进轮次
+  const text = ans.trim() || R5_BLANK_ANSWER;
+  const r = r5ValidAnswer(teamId, text);
+  if (!r) return;
+
+  // 查重命中：不计分、不推进，交由评委裁定
+  if (r.duplicate) {
+    const p = r.prev;
+    const when = new Date(p.ts).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const team = state.teams.find(t => t.id === teamId);
+    stopSpeak();
+    speak(`该答案与${p.teamName}重复`);
+    const choice = confirm(
+      `⚠️ 答案重复\n\n` +
+      `本次：${text}\n` +
+      `已有：${p.answer}\n` +
+      `　　　（${p.teamName} 于 ${when} 作答）\n\n` +
+      `【确定】= 判 ${team?.name || ''} 重复出局\n` +
+      `【取消】= 评委认定不算重复，仍判有效 +1`
+    );
+    if (choice) {
+      r5Eliminate(teamId);
+    } else {
+      r5ValidAnswer(teamId, text, { force: true });   // 评委裁定：强制通过
+      startTimer(state.r5.timerSec*1000, 5); cdSpoken.clear();
+    }
+    render();
+    return;
+  }
+
   startTimer(state.r5.timerSec*1000, 5); cdSpoken.clear(); render();
 }
 function r5DoElim(teamId) { r5Eliminate(teamId); render(); }
@@ -1468,7 +1518,7 @@ function r5ManualWinner() {
 
 // ── 大屏 ─────────────────────────────────────────
 function toggleShowScoresBTN() { toggleShowScores(undefined); }
-function stopTimer() { state.timer.state = 'idle'; }
+// 注：stopTimer() 用 shared.js 的定义，此处不再重复声明（见 16.3 第 26 项）
 
 // ── 分数调整 ─────────────────────────────────────
 function doAdj(teamId, rKey, delta) { adjustScore(teamId, rKey, delta); render(); }
