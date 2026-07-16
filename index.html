@@ -213,6 +213,18 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     </div>
   </div>
   <div class="card">
+    <div class="card-title">成绩导出 <span class="pill">赛后存档</span></div>
+    <div class="row">
+      <button class="btn-ghost btn-sm" onclick="doExport('team')">队伍成绩 CSV</button>
+      <button class="btn-ghost btn-sm" onclick="doExport('member')">个人成绩 CSV</button>
+      <button class="btn-ghost btn-sm" onclick="doExport('history')">判分流水 CSV</button>
+      <button class="btn-ghost btn-sm" onclick="doExport('archive')">完整存档 JSON</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">
+      CSV 带 BOM，Excel 打开中文不乱码。个人成绩不受队伍上限影响，可据此评「最佳个人」。
+    </div>
+  </div>
+  <div class="card">
     <div class="card-title" style="color:var(--red)">危险操作</div>
     <div class="row">
       <button class="btn-danger btn-sm" onclick="if(confirm('确定清空所有分数？'))clearAllScores()&&render()">清空所有分数</button>
@@ -252,6 +264,8 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     <div class="row" style="margin-top:10px">
       <button class="btn-success btn-sm" onclick="doR1(true)">手动判对</button>
       <button class="btn-danger btn-sm" onclick="doR1(false)">答错/超时</button>
+      <button class="btn-ghost btn-sm" style="border-color:var(--purple);color:#c4b5fd"
+              onclick="doR1Violation()" title="队内外提示：本题 0 分，另扣队伍 2 分">违规 -2</button>
       <button class="btn-ghost btn-sm" onclick="toggleShowAnswer()">公布答案</button>
       <span style="font-size:11px;color:var(--muted)">← 点击选项可自动判分</span>
     </div>
@@ -390,7 +404,10 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     <div class="row" style="margin-top:10px">
       <button class="btn-ghost btn-sm" onclick="r5NextTheme()">下一令题</button>
       <button class="btn-warn btn-sm" onclick="r5ManualWinner()">手动设擂主 +3</button>
+      <button class="btn-ghost btn-sm" style="border-color:var(--yellow);color:#fcd34d"
+              onclick="doCheckTie()" title="检测总分并列，可发起加赛令题">并列检测 / 加赛</button>
     </div>
+    <div id="r5-tie-hint" style="margin-top:8px;font-size:12px"></div>
     <div style="margin-top:10px">
       <div class="card-title">已用有效答案</div>
       <div id="r5-used" style="font-size:12px;color:var(--muted);line-height:1.8"></div>
@@ -973,7 +990,10 @@ function renderP5() {
   const themes = state.questions.filter(q => q.round === 5 && q.type === 'theme');
   const thIdx  = state.r5.currentThemeIdx;
   const curTheme = themes[thIdx];
-  document.getElementById('r5-theme-label').textContent = curTheme ? `令题：${curTheme.stem}` : '';
+  const tb = state.r5.isTiebreak;
+  document.getElementById('r5-theme-label').innerHTML = curTheme
+    ? (tb ? '<span style="color:var(--yellow)">【加赛】</span>' : '') + `令题：${escapeHtml(curTheme.stem)}`
+    : '';
   document.getElementById('r5-theme-btns').innerHTML = themes.map((t,i) =>
     `<button class="${i===thIdx?'btn-primary':'btn-ghost'} btn-sm" onclick="r5SetTheme(${i})">${escapeHtml(t.stem||`令题${i+1}`)}</button>`
   ).join('') || '<span style="color:var(--muted);font-size:12px">题库中暂无飞花令令题（round:5, type:theme）</span>';
@@ -1240,8 +1260,22 @@ function r1NextAnswerer() {
   state.cardFlip.flipPulse++;
   save(); render();
 }
-function doR1(correct) {
-  const event = scoreR1(correct);
+/** R1 违规（队内外提示）：本题 0 分 + 队伍扣 2 分，需填写缘由留痕 */
+function doR1Violation() {
+  const team = getTeamByIdx(state.r1.currentTeamIdx);
+  if (!team) return alert('请先完成抽签并选择答题队员');
+  const memberName = team.members[state.r1.currentMemberIdx] || '该选手';
+  const note = prompt(
+    `判定 ${team.name} · ${memberName} 违规？\n\n` +
+    `本题 0 分，另扣队伍 ${Math.abs(R1_VIOLATION_PENALTY)} 分。\n` +
+    `请填写缘由（会记入判分流水，可留空）：`
+  );
+  if (note === null) return;              // 取消
+  doR1('violation', note.trim());
+}
+
+function doR1(result, note = '') {
+  const event = scoreR1(result, note);
   if (!event) return alert('请先选择答题队员');
   stopTimer(); cdSpoken.clear();
   // 显示答案和分数
@@ -1249,13 +1283,17 @@ function doR1(correct) {
   state.showScoresOnDisplay = true;
   save(); render();
   // TTS 播报成绩
+  const correct = result === true;
   const team = state.teams.find(t => t.id === event.teamId);
   const memberName = event.memberName || `队员${event.memberIdx+1}`;
   const memberScore = team.memberScores[event.memberIdx] || 0;
   const teamScore = team.scores.r1 || 0;
   const total = teamTotal(team);
   let resultText;
-  if (!correct) {
+  if (event.reason === 'violation') {
+    resultText = `${team.name}违规，本题不得分，扣${scoreToSpeech(Math.abs(event.delta))}，`
+               + `${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
+  } else if (!correct) {
     resultText = `回答错误，${memberName}个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
   } else if (event.capped) {
     // 队伍已封顶：个人分照记，但队伍分不再增长。必须说清楚，否则台下会以为漏计分
@@ -1514,6 +1552,77 @@ function r5ManualWinner() {
   const tid = parseInt(input);
   if (active.includes(tid)) { r5SetWinner(tid); render(); }
   else alert('无效的队伍ID');
+}
+
+// ── 成绩导出 ─────────────────────────────────────
+/** 触发浏览器下载。CSV 前置 BOM，否则 Excel 会把 UTF-8 中文读成乱码 */
+function _download(filename, content, mime) {
+  const parts = mime.startsWith('text/csv') ? ['﻿', content] : [content];
+  const url = URL.createObjectURL(new Blob(parts, { type: mime + ';charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function doExport(kind) {
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+  const brand = (state.brandName || '荣资商厦服务技能大赛').replace(/[\\/:*?"<>|]/g, '');
+  const map = {
+    team:    ['队伍成绩',   buildTeamScoresCSV,   'csv',  'text/csv'],
+    member:  ['个人成绩',   buildMemberScoresCSV, 'csv',  'text/csv'],
+    history: ['判分流水',   buildHistoryCSV,      'csv',  'text/csv'],
+    archive: ['完整存档',   buildArchiveJSON,     'json', 'application/json'],
+  };
+  const [label, build, ext, mime] = map[kind] || [];
+  if (!build) return;
+  if (!state.history?.length && kind === 'history') {
+    if (!confirm('判分流水为空（尚未产生任何判分记录），仍要导出吗？')) return;
+  }
+  _download(`${brand}_${label}_${stamp}.${ext}`, build(), mime);
+}
+
+// ── 并列检测 / 加赛 ───────────────────────────────
+function doCheckTie() {
+  const hint = document.getElementById('r5-tie-hint');
+  const tied = hasTie();          // 冠军并列
+  const groups = getTieGroups();  // 全部并列组（含非榜首）
+
+  if (!tied.length) {
+    const other = groups.length
+      ? `（非榜首并列：${groups.map(g => g.teams.map(t=>t.name).join('=') + ' ' + g.total + '分').join('；')}）`
+      : '';
+    hint.innerHTML = `<span style="color:var(--green)">● 冠军无并列，无需加赛</span>
+      <span style="color:var(--muted)">${escapeHtml(other)}</span>`;
+    speak('冠军无并列，无需加赛');
+    return;
+  }
+
+  const names = tied.map(t => t.name).join('、');
+  const total = teamTotal(tied[0]);
+  hint.innerHTML = `<span style="color:var(--yellow)">⚠ 冠军并列：${escapeHtml(names)}，
+    同为 ${total} 分</span>`;
+
+  // 选一道尚未用过的令题加赛
+  const themes = state.questions.filter(q => q.round === 5 && q.type === 'theme');
+  const usedIdx = new Set((state.r5.themeWinners || []).map(w => w.themeIdx));
+  const freeIdx = themes.findIndex((_, i) => !usedIdx.has(i));
+  if (freeIdx < 0) {
+    alert(`冠军并列：${names}（同为 ${total} 分）\n\n但令题已全部用完，无可用的加赛令题。\n请人工裁定或补充令题后重试。`);
+    return;
+  }
+
+  if (!confirm(
+    `冠军并列：${names}\n同为 ${total} 分\n\n` +
+    `发起加赛令题「${themes[freeIdx].stem}」？\n` +
+    `仅这 ${tied.length} 支队参加，按原出场顺序轮转。`
+  )) return;
+
+  if (!r5StartTiebreak(freeIdx)) return alert('加赛启动失败：当前无并列');
+  switchPanel(5);
+  startTimer(state.r5.timerSec * 1000, 5);
+  speak(`${names}并列，进入加赛令题，${themes[freeIdx].stem}`);
+  render();
 }
 
 // ── 大屏 ─────────────────────────────────────────

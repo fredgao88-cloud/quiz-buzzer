@@ -19,9 +19,10 @@ const TEAM_COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7'];
 
 const ROUND_CAPS = { r1: 20, r2: 20, r3: null, r4: 10, r5: null };
 
-// R3 读题期抢跑的处罚分。这是对「抢跑」这一行为的处罚，与题目分值无关，
-// 因此不读 q.score_wrong（那是「答错」的分值）。赛制若调整违规标准，改这里。
-const R3_VIOLATION_PENALTY = -2;
+// 违规处罚分。都是对【行为】的处罚，与题目分值无关，因此不读 q.score_wrong
+//（那是「答错」的分值）。赛制若调整违规标准，改这里即可。
+const R1_VIOLATION_PENALTY = -2;   // R1 个人必答：队内外提示 → 本题 0 分且队伍 -2
+const R3_VIOLATION_PENALTY = -2;   // R3 擂台抢答：读题期抢跑
 
 // R4 每张图的找茬点上限，超过后 UI 拒绝继续勾选（与 ROUND_CAPS.r4 同值但语义不同：
 // 前者是单图点数上限，后者是队伍在本环节的累计得分上限）
@@ -119,6 +120,7 @@ function defaultState() {
       timerSec:        10,
       usedAnswers:     [],   // 本令题已用有效答案
       themeWinners:    [],   // 每令题擂主 teamId
+      isTiebreak:      false,// 当前令题是否为并列加赛（只有并列队参加）
     },
 
     // ── 翻牌选题 ────────────────────────────────
@@ -237,9 +239,41 @@ function getRanking() {
 }
 
 /**
+ * 并列检测（赛制：若最终并列，以新令题加赛决胜）
+ * rank: 检测第几名的并列，默认 1 = 冠军
+ * 返回并列的队伍数组；长度 < 2 表示无并列，返回空数组。
+ */
+function hasTie(rank = 1) {
+  const ranking = getRanking();
+  if (ranking.length < rank) return [];
+  const target = ranking[rank - 1].total;
+  const tied = ranking.filter(r => r.total === target);
+  return tied.length >= 2 ? tied.map(r => r.team) : [];
+}
+
+/** 全部并列组（用于赛后核对名次，返回 [{total, teams[]}]，仅含 >=2 队的组） */
+function getTieGroups() {
+  const byTotal = new Map();
+  for (const { team, total } of getRanking()) {
+    if (!byTotal.has(total)) byTotal.set(total, []);
+    byTotal.get(total).push(team);
+  }
+  return [...byTotal.entries()]
+    .filter(([, teams]) => teams.length >= 2)
+    .map(([total, teams]) => ({ total, teams }));
+}
+
+/**
  * 统一加分入口：按环节上限裁剪后写入队伍分数（见第六章）
- * roundKey: 'r1'~'r5'；有上限的环节按 clamp(delta, 0, cap - current) 裁剪，
- * 无上限环节（r3/r5）原样累加（可为负）。返回实际生效的分差。
+ * roundKey: 'r1'~'r5'。返回实际生效的分差。
+ *
+ * 裁剪规则：
+ *   无上限环节（r3/r5，cap==null）—— 原样累加，可正可负
+ *   有上限环节（r1/r2/r4）——
+ *     加分：clamp 到 cap，封顶后多余部分丢弃，且不会因已超顶而倒扣
+ *     扣分：【原样通过，不受上限约束】。处罚就是处罚，与队伍当前是否封顶无关；
+ *           若在此处也套 Math.max(0, ...)，扣分会被静默吞掉（R1 违规扣 2 分即属此例）
+ *
  * 注意：不 save()，由调用方负责。
  */
 function applyTeamScore(teamId, roundKey, delta) {
@@ -247,7 +281,12 @@ function applyTeamScore(teamId, roundKey, delta) {
   if (!team) return 0;
   const cap     = ROUND_CAPS[roundKey];
   const current = team.scores[roundKey] || 0;
-  const actual  = cap == null ? delta : Math.max(0, Math.min(delta, cap - current));
+  let actual;
+  if (cap == null || delta < 0) {
+    actual = delta;                                    // 无上限环节 / 扣分：原样
+  } else {
+    actual = Math.max(0, Math.min(delta, cap - current));  // 加分：裁剪到上限
+  }
   team.scores[roundKey] = current + actual;
   return actual;
 }
@@ -867,22 +906,35 @@ function r1SetAnswerer(teamIdx, memberIdx) {
 
 /**
  * 为第一环节当前选手评分
- * correct: boolean
+ *
+ * result: true = 答对 | false = 答错/超时 | 'violation' = 违规（队内外提示）
+ *   答对   → +q.score_correct（兜底 2.5），走上限裁剪
+ *   答错   → 0 分，不扣分
+ *   违规   → 本题 0 分【且】队伍扣 R1_VIOLATION_PENALTY（见 4.1 赛制）
+ * note: 可选文字说明（违规/裁定的缘由），写入 ScoreEvent.note
+ *
+ * 兼容：旧调用 scoreR1(true) / scoreR1(false) 行为不变。
  */
-function scoreR1(correct) {
+function scoreR1(result, note = '') {
   const team = getTeamByIdx(state.r1.currentTeamIdx);
   if (!team) return null;
   const memberIdx = state.r1.currentMemberIdx;
   const qIdx      = state.r1.currentQIdx;
   const q         = qIdx != null ? state.questions[qIdx] : null;
   const baseScore = q?.score_correct ?? 2.5;
-  const delta     = correct ? baseScore : 0;
+
+  const isViolation = result === 'violation';
+  const correct     = result === true;
+  // 违规：本题不得分，另扣队伍分（个人分不扣——处罚记在队伍头上，见 4.1）
+  const delta       = correct ? baseScore : (isViolation ? R1_VIOLATION_PENALTY : 0);
 
   // 队伍分走上限裁剪；个人分记裁剪【前】的真实得分。
   // 二者解耦的原因：R1 满分 20 = 4人×2题×2.5分，全队全对必然触顶，
   // 若个人分也跟着裁剪，恰恰是表现最好的队伍评不出「最佳个人」。
   const actual = applyTeamScore(team.id, 'r1', delta);
-  team.memberScores[memberIdx] = (team.memberScores[memberIdx] || 0) + delta;
+  // 违规扣的是队伍分，个人分只记该题本身的得分（0），不跟着倒扣
+  const memberDelta = isViolation ? 0 : delta;
+  team.memberScores[memberIdx] = (team.memberScores[memberIdx] || 0) + memberDelta;
 
   const event = {
     round:      1,
@@ -891,13 +943,14 @@ function scoreR1(correct) {
     memberIdx,
     memberName: team.members[memberIdx],
     correct,
-    delta:      actual,   // 队伍实际入账（裁剪后）
-    memberDelta: delta,   // 个人实际入账（裁剪前）；封顶后二者会不等
+    delta:      actual,        // 队伍实际入账（裁剪后）
+    memberDelta,               // 个人实际入账；封顶或违规时与 delta 不等
     capped:     delta !== actual,
-    reason:     correct ? 'correct' : 'wrong',
+    reason:     correct ? 'correct' : (isViolation ? 'violation' : 'wrong'),
     qId:        q?.id,
     ts:         Date.now(),
   };
+  if (note) event.note = note;
   logEvent(event);
   return event;
 }
@@ -1274,12 +1327,16 @@ function r4RemoveExtraSpot(idx) {
 function scoreR4(teamIdx) {
   const team = getTeamByIdx(teamIdx);
   if (!team) return null;
-  const found  = r4FoundCount();
-  const actual = applyTeamScore(team.id, 'r4', Math.min(found, ROUND_CAPS.r4));
+  const q = state.r4.currentQIdx != null ? state.questions[state.r4.currentQIdx] : null;
+  // 每处分值读题库，兜底 1（此前硬编码 1，题库的 score_correct 是装饰性字段）
+  const perSpot = q?.score_correct ?? 1;
+  const found   = r4FoundCount();
+  const raw     = found * perSpot;
+  const actual  = applyTeamScore(team.id, 'r4', Math.min(raw, ROUND_CAPS.r4));
   const event = {
     round: 4, teamId: team.id, teamName: team.name,
     correct: actual > 0, delta: actual, reason: 'spot',
-    foundCount: found, ts: Date.now(),
+    foundCount: found, perSpot, qId: q?.id, ts: Date.now(),
   };
   logEvent(event);
   return event;
@@ -1306,13 +1363,39 @@ function initR5() {
   save();
 }
 
-/** 开始新令题 */
+/** 开始新令题（全部 5 队参加） */
 function r5StartTheme(themeIdx) {
+  state.r5.currentThemeIdx = themeIdx;
+  state.r5.currentTurnIdx  = 0;
+  state.r5.teamOrder       = [...state.draw.teamOrder];   // 加赛过会被裁剪，这里还原
+  state.r5.activeTeams     = [...state.r5.teamOrder];
+  state.r5.usedAnswers     = [];
+  state.r5.isTiebreak      = false;
+  save();
+}
+
+/**
+ * 开始并列加赛令题：只有并列的队伍参加，按原出场顺序轮转
+ * themeIdx: 用哪道令题加赛（通常是一道尚未用过的）
+ * rank:     对第几名的并列加赛，默认 1（冠军）
+ * 返回 false = 当前无并列，未启动
+ */
+function r5StartTiebreak(themeIdx, rank = 1) {
+  const tied = hasTie(rank);
+  if (tied.length < 2) return false;
+  const ids = tied.map(t => t.id);
+
+  // 保持原出场顺序，只留并列的队；draw.teamOrder 为空时退化为并列队自身顺序
+  const order = state.draw.teamOrder.filter(id => ids.includes(id));
+  state.r5.teamOrder       = order.length ? order : ids;
   state.r5.currentThemeIdx = themeIdx;
   state.r5.currentTurnIdx  = 0;
   state.r5.activeTeams     = [...state.r5.teamOrder];
   state.r5.usedAnswers     = [];
+  state.r5.isTiebreak      = true;
+  state.showScoresOnDisplay = false;
   save();
+  return true;
 }
 
 /**
@@ -1554,6 +1637,86 @@ function loadQuestions(data) {
 
 function setLogo(dataUrl) { state.logo = dataUrl; save(); }
 function setBrandName(name) { state.brandName = name || ''; save(); }
+
+// =====================================================
+// 成绩报告导出（赛后存档）
+// =====================================================
+
+const ROUND_NAMES_CN = ['', '个人必答', '团队共答', '擂台抢答', '识图找茬', '服务飞花令'];
+
+function _csvCell(v) {
+  const s = String(v ?? '');
+  // 含逗号/引号/换行的单元格必须加引号，内部引号翻倍
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function _csvRows(rows) {
+  return rows.map(r => r.map(_csvCell).join(',')).join('\r\n');
+}
+function _fmtTs(ts) {
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+/** 队伍成绩表 CSV（含名次、各环节、总分） */
+function buildTeamScoresCSV() {
+  const ranking = getRanking();
+  const rows = [['名次', '队伍', '个人必答', '团队共答', '擂台抢答', '识图找茬', '服务飞花令', '总分']];
+  ranking.forEach((r, i) => {
+    const s = r.team.scores;
+    rows.push([i + 1, r.team.name, s.r1 || 0, s.r2 || 0, s.r3 || 0, s.r4 || 0, s.r5 || 0, r.total]);
+  });
+  return _csvRows(rows);
+}
+
+/** 个人成绩表 CSV（R1 个人分不受队伍上限影响，可据此评「最佳个人」，见 6.2） */
+function buildMemberScoresCSV() {
+  const rows = [['队伍', '姓名', '个人得分(R1)']];
+  const all = [];
+  state.teams.forEach(t => {
+    (t.members || []).forEach((name, i) => {
+      all.push({ team: t.name, name, score: t.memberScores?.[i] || 0 });
+    });
+  });
+  all.sort((a, b) => b.score - a.score);
+  all.forEach(m => rows.push([m.team, m.name, m.score]));
+  return _csvRows(rows);
+}
+
+/** 判分流水 CSV（全量 history，用于复盘/申诉） */
+function buildHistoryCSV() {
+  const rows = [['时间', '环节', '队伍', '选手', '判定', '队伍分差', '个人分差', '题号', '答案', '备注']];
+  (state.history || []).forEach(e => {
+    rows.push([
+      _fmtTs(e.ts),
+      ROUND_NAMES_CN[e.round] || e.round,
+      e.teamName || '',
+      e.memberName || '',
+      e.reason || '',
+      e.delta ?? '',
+      e.memberDelta ?? '',
+      e.qId || '',
+      e.answer || '',
+      [e.note, e.capped ? '(队伍已封顶)' : '', e.eliminated ? '(出局)' : '', e.manual ? '(手动调分)' : '']
+        .filter(Boolean).join(' '),
+    ]);
+  });
+  return _csvRows(rows);
+}
+
+/** 完整存档 JSON（可重新导入 localStorage 复现赛况） */
+function buildArchiveJSON() {
+  return JSON.stringify({
+    exportedAt: new Date().toISOString(),
+    brandName:  state.brandName,
+    ranking:    getRanking().map((r, i) => ({ rank: i + 1, team: r.team.name, total: r.total })),
+    tieGroups:  getTieGroups().map(g => ({ total: g.total, teams: g.teams.map(t => t.name) })),
+    teams:      state.teams,
+    draw:       state.draw,
+    r5:         { themeWinners: state.r5.themeWinners, isTiebreak: state.r5.isTiebreak },
+    history:    state.history,
+  }, null, 2);
+}
 
 // =====================================================
 // HTML 工具

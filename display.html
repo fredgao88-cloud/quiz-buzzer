@@ -476,7 +476,14 @@ function updateCardFlip() {
 function updateFlowerArea() {
   const themes = state.questions.filter(q => q.round === 5 && q.type === 'theme');
   const curTheme = themes[state.r5.currentThemeIdx];
-  document.getElementById('flower-theme').textContent = curTheme ? `令题：${curTheme.stem}` : '服务飞花令';
+  const themeEl = document.getElementById('flower-theme');
+  if (state.r5.isTiebreak) {
+    // 加赛：观众必须一眼看出这是决胜局
+    themeEl.innerHTML = `<span style="color:var(--yellow)">【并列加赛】</span> `
+      + escapeHtml(curTheme ? `令题：${curTheme.stem}` : '服务飞花令');
+  } else {
+    themeEl.textContent = curTheme ? `令题：${curTheme.stem}` : '服务飞花令';
+  }
 
   const tOrder = state.r5.teamOrder.length ? state.r5.teamOrder : state.teams.map(t=>t.id);
   const active = state.r5.activeTeams || [];
@@ -496,6 +503,21 @@ function updateFlowerArea() {
   document.getElementById('flower-used').textContent =
     used.map((a,i)=>`${i+1}.${a.answer}`).join('  ') || '（暂无）';
 }
+
+// ── 键盘：F 全屏 ─────────────────────────────────
+// 大屏是只读页，除全屏外不接受任何按键（不写 state）
+document.addEventListener('keydown', e => {
+  if (e.key !== 'f' && e.key !== 'F') return;
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  e.preventDefault();
+  if (document.fullscreenElement) {
+    document.exitFullscreen?.();
+  } else {
+    // 需用户手势触发，键盘事件本身即手势；失败（如被策略拦截）时静默回落 F11
+    document.documentElement.requestFullscreen?.().catch(err =>
+      console.warn('[rz] 全屏被拒绝，请改用 F11:', err.message));
+  }
+});
 
 // ── 循环更新（requestAnimationFrame） ─────────────
 function loop() {
