@@ -582,6 +582,7 @@ function renderTopbar() {
   document.getElementById('brand-text').textContent = state.brandName || '荣资商厦服务技能大赛';
 }
 
+let _lastTimerStart = null;
 function renderTimer() {
   const rem = getRemainingMs();
   const ts  = state.timer.state;
@@ -589,6 +590,12 @@ function renderTimer() {
   const prog = document.getElementById('timer-prog');
   const dot  = document.getElementById('tts-dot');
   dot.className = 'tts-dot' + (window.speechSynthesis?.speaking ? ' on' : '');
+
+  // 计时器每次重新启动时清空倒计时播报记录（覆盖所有 startTimer 调用点）
+  if (state.timer.startedAt !== _lastTimerStart) {
+    _lastTimerStart = state.timer.startedAt;
+    cdSpoken.clear();
+  }
 
   if (ts === 'idle') { disp.textContent = '--'; prog.value = 0; disp.className = ''; return; }
   if (ts === 'expired') { disp.textContent = '0'; prog.value = 0; disp.className = 'danger'; return; }
@@ -607,11 +614,79 @@ function renderTimer() {
       speak(String(secs));
     }
   }
-  // 自动超时
+  // 自动超时 → 触发各环节超时判定（见 15.4）
   if (ts === 'running' && rem === 0) {
+    const round = state.timer.round;
     expireTimer();
     cdSpoken.clear();
+    onTimerExpired(round);
   }
+}
+
+// ── 超时自动判定（15.4 设计稿落地）──────────────────
+function onTimerExpired(round) {
+  switch (round) {
+    case 1:
+      // 个人必答超时：0 分（等同答错），播完提示后自动落分
+      if (state.r1.currentQIdx != null) {
+        speakQueue(['时间到，作答超时'], () => doR1(false));
+      }
+      break;
+    case 2:
+      // 团队共答超时：只提示举板，判分仍由主持人逐队录入
+      speak('时间到，请各队举板');
+      break;
+    case 3:
+      r3AutoTimeout();
+      break;
+    case 4:
+      // 识图找茬超时：只播报，不自动结算（评委勾选可能滞后于倒计时）
+      speak('时间到，本队找茬结束');
+      break;
+    case 5: {
+      // 飞花令超时：当前队出局
+      const order = state.r5.teamOrder || [];
+      const tid = order[state.r5.currentTurnIdx];
+      if (tid != null && (state.r5.activeTeams || []).includes(tid)) {
+        speakQueue(['时间到'], () => { r5Eliminate(tid); render(); });
+      }
+      break;
+    }
+  }
+  render();
+}
+
+/** R3 超时：locked=作答超时扣分并视情况开放补抢；armed=无人抢答 */
+function r3AutoTimeout() {
+  const bs = state.r3.buzzState;
+  if (bs === 'locked') {
+    const team = state.teams.find(t => t.id === state.r3.selectedTeam);
+    const q = state.r3.currentQIdx != null ? state.questions[state.r3.currentQIdx] : null;
+    const wrongScore = q?.score_wrong ?? -2;
+    if (team) {
+      const delta = applyTeamScore(team.id, 'r3', wrongScore);
+      logEvent({ round:3, teamId:team.id, teamName:team.name, correct:false,
+                 delta, reason:'timeout', qId:q?.id, ts:Date.now() }, true);
+    }
+    state.showScoresOnDisplay = true;
+    save();
+    const announce = `${team?.name || ''}，作答超时，扣${scoreToSpeech(Math.abs(wrongScore))}`;
+    if (!state.r3.supplementUsed) {
+      // r3OpenSupplement 要求 locked 状态，播报完再开放补抢
+      speakQueue([announce], () => { r3OpenSupplement(); render(); });
+    } else {
+      state.r3.buzzState = 'idle'; state.r3.buzzedTeam = null;
+      state.r3.selectedTeam = null; state.r3.selectedMember = null;
+      save();
+      speak(announce);
+    }
+  } else if (bs === 'armed') {
+    state.r3.buzzState = 'idle'; state.r3.buzzedTeam = null;
+    state.r3.selectedTeam = null; state.r3.selectedMember = null;
+    save();
+    speak('时间到，无人抢答');
+  }
+  render();
 }
 
 function fmtMs(ms) {
@@ -790,7 +865,6 @@ function renderP3() {
     reading: {text:'正在朗读题目...', cls:'buzz-reading', anim:true},
     armed: {text:'开始抢答！', cls:'buzz-armed', anim:true},
     locked: {text:`${state.teams.find(t=>t.id===state.r3.buzzedTeam)?.name||'?'} 抢答成功`, cls:'buzz-locked', anim:false},
-    supplement: {text:'开放补抢！', cls:'buzz-supplement', anim:true},
   };
   const bm = bannerMap[bs] || bannerMap.idle;
   const banner = document.getElementById('r3-banner');
@@ -801,7 +875,7 @@ function renderP3() {
   renderQBox('r3-q-box', state.r3.currentQIdx, true);
 
   const bi = document.getElementById('r3-buzz-info');
-  if (bs === 'locked' || bs === 'supplement') {
+  if (bs === 'locked') {
     bi.style.display = '';
     const buzzTeam = state.teams.find(t => t.id === state.r3.buzzedTeam);
     const c = buzzTeam ? tColor(buzzTeam) : '#888';
@@ -833,8 +907,11 @@ function renderP4() {
   const c    = team ? tColor(team) : '#888';
   document.getElementById('r4-team-name').innerHTML =
     team ? `<span style="color:${c}">第${tIdx+1}队：${escapeHtml(team.name)}</span>` : '请先抽签并开始本环节';
-  document.getElementById('r4-image-key').textContent =
-    team ? `分配图题：${state.draw.r4ImageMap[team.id]||'未分配'}` : '';
+  const r4Key = team ? state.draw.r4ImageMap[team.id] : null;
+  document.getElementById('r4-image-key').innerHTML = team
+    ? `分配图题：${escapeHtml(r4Key || '未分配')}` +
+      (r4Key ? ` <a href="${escapeAttr(getR4ImageSrc(r4Key))}" target="_blank" style="color:var(--accent)">查看图片</a>` : '')
+    : '';
   document.getElementById('r4-progress').textContent = `${tIdx+1}/5 队`;
 
   // 翻牌
@@ -1231,11 +1308,9 @@ function doR2Score(teamId, correct) {
   const q = state.r2.currentQIdx != null ? state.questions[state.r2.currentQIdx] : null;
   const team = state.teams.find(t=>t.id===teamId);
   if (!team || !q) return;
-  const delta = correct ? 5 : 0;
-  const prev  = team.scores.r2 || 0;
-  const actual = Math.min(delta, 20 - prev);
-  team.scores.r2 = prev + Math.max(0, actual);
-  const event = { round:2, teamId, teamName:team.name, correct, delta:Math.max(0,actual), reason:correct?'correct':'wrong', ts:Date.now() };
+  const delta  = correct ? (q.score_correct ?? 5) : 0;
+  const actual = applyTeamScore(teamId, 'r2', delta);
+  const event = { round:2, teamId, teamName:team.name, correct, delta:actual, reason:correct?'correct':'wrong', qId:q.id, ts:Date.now() };
   logEvent(event);
   state.showScoresOnDisplay = true;
   save(); render();
@@ -1243,7 +1318,7 @@ function doR2Score(teamId, correct) {
   const teamScore = team.scores.r2 || 0;
   const total = teamTotal(team);
   const text = correct
-    ? `${team.name}回答正确，得${scoreToSpeech(Math.max(0,actual))}，本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`
+    ? `${team.name}回答正确，得${scoreToSpeech(actual)}，本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`
     : `${team.name}回答错误`;
   speak(text);
 }
@@ -1278,18 +1353,19 @@ function doR3(correct) {
   const teamScore = team.scores.r3 || 0;
   const total = teamTotal(team);
   const resultText = correct
-    ? `回答正确，${memberName}加${scoreToSpeech(2)}，个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`
-    : `回答错误，${memberName}扣${scoreToSpeech(2)}，个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
+    ? `回答正确，${memberName}加${scoreToSpeech(Math.abs(ev.delta))}，个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`
+    : `回答错误，${memberName}扣${scoreToSpeech(Math.abs(ev.delta))}，个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
   speak(resultText);
 }
 function doR3Supp() { r3OpenSupplement(); render(); }
 function doR3Timeout() {
-  // 超时处理：仅在locked状态扣分
+  // 超时处理：仅在locked状态扣分（分值读题库，兜底 -2）
   if (state.r3.buzzState === 'locked') {
     const team = state.teams.find(t=>t.id===state.r3.selectedTeam);
+    const q = state.r3.currentQIdx != null ? state.questions[state.r3.currentQIdx] : null;
     if (team) {
-      team.scores.r3 = (team.scores.r3||0) - 2;
-      logEvent({round:3,teamId:team.id,teamName:team.name,correct:false,delta:-2,reason:'timeout',ts:Date.now()});
+      const delta = applyTeamScore(team.id, 'r3', q?.score_wrong ?? -2);
+      logEvent({round:3,teamId:team.id,teamName:team.name,correct:false,delta,reason:'timeout',qId:q?.id,ts:Date.now()});
     }
   }
   state.r3.buzzState = 'idle'; state.r3.buzzedTeam = null;

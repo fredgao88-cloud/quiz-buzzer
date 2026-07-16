@@ -35,6 +35,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .q-opt{padding:12px 20px;border-radius:10px;border:2px solid var(--border);background:var(--surface);font-size:18px;transition:all .3s}
 .q-opt.correct{background:#14532d55;border-color:var(--green);color:#86efac;transform:scale(1.02)}
 #q-answer-box{margin-top:18px;padding:14px 24px;border-radius:10px;background:#1e3a5f;border:2px solid var(--accent);font-size:20px;color:#93c5fd;text-align:center;max-width:860px;width:100%}
+#q-image{margin-top:18px;max-width:min(84vw,1100px);max-height:56vh;border-radius:12px;border:2px solid var(--border);object-fit:contain;background:#000}
+#q-image-missing{margin-top:18px;padding:16px 28px;border-radius:10px;border:2px dashed var(--red);color:var(--red);font-size:18px;text-align:center}
 
 /* ── 抢答横幅 ── */
 #buzz-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:10}
@@ -125,6 +127,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
   <div id="q-area">
     <div id="no-q-hint">等待开始...</div>
     <div id="q-stem" style="display:none"></div>
+    <img id="q-image" style="display:none" alt="">
+    <div id="q-image-missing" style="display:none"></div>
     <div id="q-options" style="display:none"></div>
     <div id="q-answer-box" style="display:none"></div>
     <!-- buzz overlay -->
@@ -254,10 +258,13 @@ function updateQuestion() {
   const stem  = document.getElementById('q-stem');
   const opts  = document.getElementById('q-options');
   const ansBox= document.getElementById('q-answer-box');
+  const img   = document.getElementById('q-image');
+  const imgMiss = document.getElementById('q-image-missing');
 
   // 赛前准备：显示主题图
   if (state.currentRound === 0) {
     stem.style.display = 'none'; opts.style.display = 'none'; ansBox.style.display = 'none';
+    img.style.display = 'none'; imgMiss.style.display = 'none';
     if (state.logo) {
       hint.style.display = '';
       hint.innerHTML = `<img src="${escapeAttr(state.logo)}" style="max-width:70vw;max-height:60vh;border-radius:16px;box-shadow:0 8px 40px #0008;object-fit:contain">
@@ -272,15 +279,34 @@ function updateQuestion() {
 
   if (qIdx == null) {
     hint.style.display = ''; hint.textContent = '等待出题...';
-    stem.style.display = 'none';
+    stem.style.display = 'none'; img.style.display = 'none'; imgMiss.style.display = 'none';
     opts.style.display = 'none'; ansBox.style.display = 'none'; return;
   }
   const q = state.questions[qIdx];
-  if (!q) { hint.textContent = '题目加载失败'; hint.style.display = ''; stem.style.display='none'; return; }
+  if (!q) {
+    hint.textContent = '题目加载失败'; hint.style.display = ''; stem.style.display='none';
+    img.style.display = 'none'; imgMiss.style.display = 'none'; return;
+  }
 
   hint.style.display = 'none';
   stem.style.display = '';
   stem.textContent   = q.stem || '';
+
+  // 找茬场景图（第四环节 spot 题）
+  if (q.type === 'spot' && q.imageKey) {
+    const src = getR4ImageSrc(q.imageKey);
+    imgMiss.style.display = 'none';
+    img.onerror = () => {
+      img.style.display = 'none';
+      imgMiss.style.display = '';
+      imgMiss.textContent = `未找到场景图文件：${src}（请将图片放入 images/ 目录）`;
+    };
+    if (img.getAttribute('src') !== src) img.src = src;
+    img.style.display = '';
+  } else {
+    img.style.display = 'none';
+    imgMiss.style.display = 'none';
+  }
 
   // 选项
   if (q.options?.length) {
@@ -296,7 +322,10 @@ function updateQuestion() {
   }
 
   // 答案
-  if (state.showAnswerOnDisplay && q.answer) {
+  if (state.showAnswerOnDisplay && q.type === 'spot' && q.spots?.length) {
+    ansBox.style.display = '';
+    ansBox.textContent = '找茬点：' + q.spots.map((s, i) => `${i+1}.${s.label}`).join('　');
+  } else if (state.showAnswerOnDisplay && q.answer) {
     const ans = Array.isArray(q.answer) ? q.answer.join('、') : String(q.answer);
     ansBox.style.display = '';
     ansBox.textContent = `答案：${ans}`;

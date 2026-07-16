@@ -71,7 +71,7 @@ function defaultState() {
       currentQIdx:     null,
       usedQIds:        [],
       timerSec:        15,
-      buzzState:       'idle',   // idle|reading|armed|locked|supplement
+      buzzState:       'idle',   // idle|reading|armed|locked
       buzzedTeam:      null,
       selectedTeam:    null,
       selectedMember:  null,
@@ -89,6 +89,13 @@ function defaultState() {
       timerSec:       60,
       spotJudge:      {},    // {spotKey: true/false} 评委勾选结果
       extraSpots:     [],    // 评委现场认定额外找茬点
+      imageFiles: {          // imageKey → 图片文件路径（相对 html 所在目录）
+        '图A': 'images/图A.png',
+        '图B': 'images/图B.png',
+        '图C': 'images/图C.png',
+        '图D': 'images/图D.png',
+        '图E': 'images/图E.png',
+      },
     },
 
     // ── 第五环节 服务飞花令 ──────────────────────
@@ -126,7 +133,6 @@ function defaultState() {
       pausedAt:   null,
       elapsedMs:  0,        // 暂停前已过去的毫秒
       round:      null,     // 属于哪个环节
-      autoExpire: true,     // 到0时自动触发 expireTimer()
     },
 
     // ── 抽签 ────────────────────────────────────
@@ -214,6 +220,34 @@ function getRanking() {
     .sort((a, b) => b.total - a.total);
 }
 
+/**
+ * 统一加分入口：按环节上限裁剪后写入队伍分数（见第六章）
+ * roundKey: 'r1'~'r5'；有上限的环节按 clamp(delta, 0, cap - current) 裁剪，
+ * 无上限环节（r3/r5）原样累加（可为负）。返回实际生效的分差。
+ * 注意：不 save()，由调用方负责。
+ */
+function applyTeamScore(teamId, roundKey, delta) {
+  const team = getTeam(teamId);
+  if (!team) return 0;
+  const cap     = ROUND_CAPS[roundKey];
+  const current = team.scores[roundKey] || 0;
+  const actual  = cap == null ? delta : Math.max(0, Math.min(delta, cap - current));
+  team.scores[roundKey] = current + actual;
+  return actual;
+}
+
+/** 第四环节：imageKey → 图片文件路径（可用 setR4ImageFile 覆盖默认约定） */
+function getR4ImageSrc(imageKey) {
+  if (!imageKey) return null;
+  return state.r4.imageFiles?.[imageKey] || `images/${imageKey}.png`;
+}
+
+function setR4ImageFile(imageKey, path) {
+  if (!state.r4.imageFiles) state.r4.imageFiles = {};
+  state.r4.imageFiles[imageKey] = path;
+  save();
+}
+
 // ── 持久化 ───────────────────────────────────────
 function load() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -285,6 +319,8 @@ function speak(text, opts = {}) {
   if (voice) utt.voice = voice;
   if (opts.onend) utt.onend = opts.onend;
   speechSynthesis.speak(utt);
+  // Chrome 长时间空置后可能停在 paused 静默状态，resume 兜底（见 12.11）
+  try { speechSynthesis.resume(); } catch(e) {}
 }
 
 /** 顺序播放多段文本；全部播完后调用 onAllDone */
@@ -310,6 +346,7 @@ function _drainQueue(onAllDone) {
   if (voice) utt.voice = voice;
   utt.onend = () => _drainQueue(onAllDone);
   speechSynthesis.speak(utt);
+  try { speechSynthesis.resume(); } catch(e) {}
 }
 
 function stopSpeak() {
@@ -347,14 +384,26 @@ function intToChinese(n) {
 /**
  * 播报得分事件
  * event: { teamName, reason, delta }
- * reason: 'correct'|'wrong'|'timeout'|'violation'|'spot'|'flower_valid'|'flower_winner'|'adjust'
+ * reason: 'correct'|'partial'|'wrong'|'timeout'|'violation'|'spot'|'flower_valid'|'flower_winner'|'adjust'
+ * 话术可用 state.tts.scripts[reason] 覆盖，模板支持 {team}/{score}/{delta} 占位符
  */
 function announceScore(event, callback) {
   if (!isTTSAvailable()) { callback?.(); return; }
   const { teamName, reason, delta } = event;
+  const custom = state.tts.scripts?.[reason];
+  if (custom) {
+    const text = custom
+      .replace(/\{team\}/g, teamName ?? '')
+      .replace(/\{score\}/g, scoreToSpeech(Math.abs(delta || 0)))
+      .replace(/\{delta\}/g, String(delta ?? 0));
+    speak(text, { onend: callback });
+    return;
+  }
   let text = '';
   if (reason === 'correct') {
     text = `${teamName}，答对，得${scoreToSpeech(Math.abs(delta))}`;
+  } else if (reason === 'partial') {
+    text = `${teamName}，部分答对，得${scoreToSpeech(Math.abs(delta))}`;
   } else if (reason === 'wrong') {
     text = `${teamName}，答错，${delta < 0 ? '扣' + scoreToSpeech(Math.abs(delta)) : '不得分'}`;
   } else if (reason === 'timeout') {
@@ -405,7 +454,6 @@ function startTimer(durationMs, round = null) {
     pausedAt:   null,
     elapsedMs:  0,
     round,
-    autoExpire: true,
   };
   save();
 }
@@ -665,12 +713,7 @@ function scoreR1(correct) {
   const baseScore = q?.score_correct ?? 2.5;
   const delta     = correct ? baseScore : 0;
 
-  // 检查上限
-  const current = team.scores.r1 || 0;
-  const capped  = Math.min(delta, ROUND_CAPS.r1 - current);
-  const actual  = Math.max(0, capped);
-
-  team.scores.r1 = (team.scores.r1 || 0) + actual;
+  const actual = applyTeamScore(team.id, 'r1', delta);
   team.memberScores[memberIdx] = (team.memberScores[memberIdx] || 0) + actual;
 
   const event = {
@@ -729,15 +772,14 @@ function scoreR2Multi(teamId, selected, correctOptions, totalScore = 5) {
     // 按正确选项数均分
     delta = (selSet.size / corrSet.size) * totalScore;
   }
-  const current = team.scores.r2 || 0;
-  const capped  = Math.min(delta, ROUND_CAPS.r2 - current);
-  const actual  = Math.max(0, Math.round(capped * 100) / 100);
+  const actual = applyTeamScore(team.id, 'r2', Math.round(delta * 100) / 100);
 
-  team.scores.r2 = (team.scores.r2 || 0) + actual;
+  const fullCorrect = !hasWrong && selSet.size === corrSet.size;
   const event = {
     round: 2, teamId: team.id, teamName: team.name,
-    correct: !hasWrong && selSet.size === corrSet.size,
-    delta: actual, reason: (!hasWrong && selSet.size > 0) ? 'correct' : 'wrong',
+    correct: fullCorrect,
+    delta: actual,
+    reason: fullCorrect ? 'correct' : (actual > 0 ? 'partial' : 'wrong'),
     qId: q?.id, ts: Date.now(),
   };
   logEvent(event);
@@ -761,16 +803,15 @@ function scoreR2FillMulti(teamId, blanks, correctBlanks, totalScore = 5) {
     const expected = Array.isArray(ans) ? ans : [ans];
     if (expected.some(e => e.trim() === given)) correct++;
   });
-  const delta   = Math.round(correct * perBlank * 100) / 100;
-  const current = team.scores.r2 || 0;
-  const capped  = Math.min(delta, ROUND_CAPS.r2 - current);
-  const actual  = Math.max(0, capped);
+  const delta  = Math.round(correct * perBlank * 100) / 100;
+  const actual = applyTeamScore(team.id, 'r2', delta);
 
-  team.scores.r2 = (team.scores.r2 || 0) + actual;
+  const fullCorrect = correct === correctBlanks.length;
   const event = {
     round: 2, teamId: team.id, teamName: team.name,
-    correct: correct === correctBlanks.length,
-    delta: actual, reason: correct > 0 ? 'correct' : 'wrong',
+    correct: fullCorrect,
+    delta: actual,
+    reason: fullCorrect ? 'correct' : (actual > 0 ? 'partial' : 'wrong'),
     qId: q?.id, ts: Date.now(),
   };
   logEvent(event);
@@ -847,8 +888,8 @@ function r3TryBuzz(teamId, onViolationDone) {
   state.r3.selectedMember = null;
   state.r3.buzzPulse      = (state.r3.buzzPulse || 0) + 1;
   state.r3.lastBuzzTeam   = teamId;
-  stopTimer();
-  save();
+  // 抢答窗口计时结束，重启 15 秒答题倒计时（见 4.3）
+  startTimer(state.r3.timerSec * 1000, 3);
 
   if (window.IS_CONTROL) {
     speak(`${team.name}抢答成功，请答题`);
@@ -865,7 +906,7 @@ function r3EarlyBuzz(teamId, onDone) {
   // 暂停 TTS
   if (window.IS_CONTROL) stopSpeak();
   // 扣分
-  team.scores.r3 = (team.scores.r3 || 0) - 2;
+  applyTeamScore(team.id, 'r3', -2);
   const event = {
     round: 3, teamId: team.id, teamName: team.name,
     correct: false, delta: -2, reason: 'violation',
@@ -915,16 +956,16 @@ function r3Score(correct) {
   const team      = getTeam(teamId);
   if (!team || memberIdx == null) return null;
 
-  const delta = correct ? 2 : -2;
-  team.scores.r3 = (team.scores.r3 || 0) + delta;
-  if (memberIdx != null) {
-    team.memberScores[memberIdx] = (team.memberScores[memberIdx] || 0) + delta;
-  }
+  // 分值读题库配置，兜底 ±2（见 16.1 第 2 项）
+  const q     = state.r3.currentQIdx != null ? state.questions[state.r3.currentQIdx] : null;
+  const delta = correct ? (q?.score_correct ?? 2) : (q?.score_wrong ?? -2);
+  applyTeamScore(team.id, 'r3', delta);
+  team.memberScores[memberIdx] = (team.memberScores[memberIdx] || 0) + delta;
   const event = {
     round: 3, teamId: team.id, teamName: team.name,
     memberIdx, memberName: team.members[memberIdx],
     correct, delta, reason: correct ? 'correct' : 'wrong',
-    qId: state.questions[state.r3.currentQIdx]?.id,
+    qId: q?.id,
     fromBuzz: true, ts: Date.now(),
   };
   logEvent(event);
@@ -1007,11 +1048,7 @@ function scoreR4(teamIdx) {
   if (!team) return null;
   const found  = Object.values(state.r4.spotJudge).filter(Boolean).length
                  + state.r4.extraSpots.length;
-  const delta  = Math.min(found, ROUND_CAPS.r4);
-  const current= team.scores.r4 || 0;
-  const actual = Math.max(0, Math.min(delta, ROUND_CAPS.r4 - current));
-
-  team.scores.r4 = (team.scores.r4 || 0) + actual;
+  const actual = applyTeamScore(team.id, 'r4', Math.min(found, ROUND_CAPS.r4));
   const event = {
     round: 4, teamId: team.id, teamName: team.name,
     correct: actual > 0, delta: actual, reason: 'spot',
@@ -1060,7 +1097,7 @@ function r5ValidAnswer(teamId, answer) {
   const team = getTeam(teamId);
   if (!team) return null;
   state.r5.usedAnswers.push({ teamId, answer, ts: Date.now() });
-  team.scores.r5 = (team.scores.r5 || 0) + 1;
+  applyTeamScore(team.id, 'r5', 1);
   const event = {
     round: 5, teamId: team.id, teamName: team.name,
     correct: true, delta: 1, reason: 'flower_valid',
@@ -1100,7 +1137,7 @@ function r5Eliminate(teamId) {
 function r5SetWinner(teamId) {
   const team = getTeam(teamId);
   if (!team) return null;
-  team.scores.r5 = (team.scores.r5 || 0) + 3;
+  applyTeamScore(team.id, 'r5', 3);
   state.r5.themeWinners.push({ themeIdx: state.r5.currentThemeIdx, teamId });
   const event = {
     round: 5, teamId: team.id, teamName: team.name,
