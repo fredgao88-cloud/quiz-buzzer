@@ -1,0 +1,1495 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>荣资商厦服务技能大赛 · 控制台</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f172a;--surface:#1e293b;--surface2:#273549;--border:#334155;
+  --text:#e2e8f0;--muted:#94a3b8;--accent:#3b82f6;
+  --green:#22c55e;--red:#ef4444;--yellow:#f59e0b;--purple:#a855f7;
+}
+body{background:var(--bg);color:var(--text);font-family:'Microsoft YaHei',system-ui,sans-serif;font-size:14px;min-height:100vh;display:flex;flex-direction:column}
+button{cursor:pointer;border:none;border-radius:6px;font-family:inherit;font-size:13px;padding:6px 14px;transition:opacity .15s,transform .1s}
+button:active{transform:scale(.97)}
+button:disabled{opacity:.4;cursor:not-allowed}
+input,select,textarea{background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:13px;padding:5px 10px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
+
+/* topbar */
+#topbar{display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+#topbar .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px}
+#topbar .brand img{height:32px;border-radius:4px;object-fit:contain}
+.spacer{flex:1}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600}
+.badge-blue{background:#1e40af44;color:#93c5fd;border:1px solid #1e40af}
+.badge-green{background:#14532d44;color:#86efac;border:1px solid #166534}
+.badge-yellow{background:#78350f44;color:#fcd34d;border:1px solid #92400e}
+.badge-red{background:#7f1d1d44;color:#fca5a5;border:1px solid #991b1b}
+.badge-purple{background:#4c1d9544;color:#c4b5fd;border:1px solid #6d28d9}
+
+/* tabs */
+#round-tabs{display:flex;gap:2px;padding:8px 12px 0;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.rtab{padding:7px 16px;border-radius:8px 8px 0 0;color:var(--muted);background:transparent;border:1px solid transparent;border-bottom:none;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s}
+.rtab:hover{color:var(--text);background:var(--surface2)}
+.rtab.active{color:#fff;background:var(--accent);border-color:var(--accent)}
+
+/* main */
+#main{flex:1;overflow-y:auto;padding:16px}
+.panel{display:none}
+.panel.active{display:block}
+
+/* card */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px}
+.card-title{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.pill{font-size:11px;padding:2px 8px;border-radius:8px;background:var(--surface2);color:var(--accent);font-weight:500;letter-spacing:0;text-transform:none}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* buttons */
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover:not(:disabled){background:#2563eb}
+.btn-success{background:var(--green);color:#fff}
+.btn-success:hover:not(:disabled){background:#16a34a}
+.btn-danger{background:var(--red);color:#fff}
+.btn-danger:hover:not(:disabled){background:#dc2626}
+.btn-warn{background:var(--yellow);color:#000}
+.btn-warn:hover:not(:disabled){background:#d97706}
+.btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+.btn-ghost:hover:not(:disabled){background:var(--border)}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-lg{padding:10px 24px;font-size:15px;font-weight:600}
+
+/* teams grid */
+.teams-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+@media(max-width:900px){.teams-grid{grid-template-columns:repeat(3,1fr)}}
+.team-card{background:var(--surface2);border:2px solid var(--border);border-radius:10px;padding:10px;text-align:center}
+.team-card.selected{border-color:var(--accent);background:#1e3a5f}
+.team-name{font-weight:700;font-size:14px;margin-bottom:4px}
+.team-score-big{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.team-sub{font-size:11px;color:var(--muted);margin-top:3px}
+.member-btn{padding:4px 8px;border-radius:5px;font-size:12px;background:var(--surface);border:1px solid var(--border);color:var(--text);cursor:pointer;transition:all .15s}
+.member-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.member-btn:hover:not(.active){background:var(--border)}
+
+/* question box */
+.q-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px}
+.q-index{font-size:11px;color:var(--muted);margin-bottom:4px}
+.q-stem{font-size:15px;line-height:1.6;white-space:pre-wrap}
+.q-options{margin-top:8px;display:flex;flex-direction:column;gap:4px}
+.q-option{padding:5px 10px;border-radius:6px;background:var(--surface);border:1px solid var(--border);font-size:13px}
+.q-option.correct{background:#14532d55;border-color:var(--green);color:#86efac}
+.q-option.selected{background:#1e3a5f;border-color:var(--accent);color:#93c5fd}
+.q-option[onclick]{cursor:pointer;transition:background .15s,border-color .15s}
+.q-option[onclick]:hover{background:var(--surface2);border-color:var(--muted)}
+.q-answer{margin-top:8px;padding:8px 12px;border-radius:6px;background:#1e3a5f;border:1px solid var(--accent);font-size:13px;color:#93c5fd}
+
+/* timer bar */
+#timer-bar{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0}
+#timer-display{font-size:28px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--green);min-width:56px;text-align:center}
+#timer-display.warn{color:var(--yellow)}
+#timer-display.danger{color:var(--red)}
+#timer-bar progress{flex:1;height:6px;border-radius:3px;border:none;accent-color:var(--accent)}
+
+/* bottom bar */
+#bottom-bar{display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+
+/* buzz banner */
+.buzz-banner{padding:12px 18px;border-radius:10px;font-size:16px;font-weight:700;text-align:center;margin-bottom:8px}
+.buzz-idle{background:#1e293b;border:2px solid var(--border);color:var(--muted)}
+.buzz-reading{background:#78350f33;border:2px solid var(--yellow);color:var(--yellow)}
+.buzz-armed{background:#14532d33;border:2px solid var(--green);color:var(--green)}
+.buzz-locked{background:#1e3a5f33;border:2px solid var(--accent);color:#93c5fd}
+.buzz-supplement{background:#4c1d9533;border:2px solid var(--purple);color:#c4b5fd}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+.anim-pulse{animation:pulse .9s ease-in-out infinite}
+
+/* draw */
+.draw-order-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:6px 0}
+.draw-slot{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 14px;border-radius:8px;border:2px solid var(--border);background:var(--surface2);min-width:80px;text-align:center}
+.draw-slot .slot-num{font-size:11px;color:var(--muted)}
+.draw-slot .slot-name{font-size:14px;font-weight:700}
+
+/* flip cards */
+.flip-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px}
+.flip-card{aspect-ratio:3/4;border-radius:8px;border:2px solid var(--border);background:var(--surface2);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;color:var(--muted);transition:all .2s;user-select:none;padding:4px;text-align:center}
+.flip-card:hover:not(.revealed):not(.used){border-color:var(--accent);color:var(--accent);background:#1e3a5f}
+.flip-card.revealed{background:var(--accent);border-color:var(--accent);color:#fff;font-size:11px;padding:6px}
+.flip-card.used{background:var(--surface);border-color:var(--border);color:var(--border);cursor:not-allowed;opacity:.4}
+
+/* spot judge */
+.spot-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+.spot-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:7px;border:1px solid var(--border);background:var(--surface2);cursor:pointer;transition:all .15s}
+.spot-item.checked{background:#14532d44;border-color:var(--green)}
+.spot-item label{cursor:pointer;font-size:13px;flex:1}
+
+/* flower */
+.flower-row{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);margin-bottom:6px;transition:all .2s}
+.flower-row.cur{border-color:var(--green);background:#14532d22}
+.flower-row.out{opacity:.4}
+
+/* settings modal */
+#settings-overlay{position:fixed;inset:0;background:#00000088;z-index:100;display:none;align-items:center;justify-content:center}
+#settings-overlay.open{display:flex}
+#settings-modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;width:min(680px,96vw);max-height:90vh;overflow-y:auto;padding:20px}
+.sep{height:1px;background:var(--border);margin:14px 0}
+.s-section{margin-bottom:14px}
+.s-section h3{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+
+/* history */
+#hist-panel{position:fixed;bottom:90px;right:16px;width:300px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;z-index:50;display:none}
+#history-list{max-height:200px;overflow-y:auto;font-size:12px}
+.hist-item{display:flex;gap:6px;padding:3px 5px;border-radius:4px;margin-bottom:2px}
+.hist-item.pos{background:#14532d22}
+.hist-item.neg{background:#7f1d1d22}
+.hist-time{color:var(--muted);min-width:52px;flex-shrink:0}
+
+/* tts dot */
+.tts-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block;margin-right:4px}
+.tts-dot.on{background:var(--green);animation:pulse .9s ease-in-out infinite}
+</style>
+</head>
+<body>
+<script>window.IS_CONTROL = true;</script>
+<script src="shared.js"></script>
+
+<!-- topbar -->
+<div id="topbar">
+  <div class="brand">
+    <img id="logo-img" src="" style="display:none" alt="">
+    <span id="brand-text">荣资商厦服务技能大赛</span>
+  </div>
+  <div class="spacer"></div>
+  <span id="round-badge" class="badge badge-blue">赛前准备</span>
+  <button class="btn-ghost btn-sm" onclick="toggleShowScoresBTN()">大屏分数</button>
+  <button class="btn-ghost btn-sm" onclick="openSettings()">设置</button>
+  <button class="btn-primary btn-sm" onclick="window.open('display.html','display','width=1280,height=720')">打开展示页</button>
+</div>
+
+<!-- round tabs -->
+<div id="round-tabs">
+  <button class="rtab active" data-r="0" onclick="switchPanel(0)">赛前准备</button>
+  <button class="rtab" data-r="1" onclick="switchPanel(1)">① 个人必答</button>
+  <button class="rtab" data-r="2" onclick="switchPanel(2)">② 团队共答</button>
+  <button class="rtab" data-r="3" onclick="switchPanel(3)">③ 擂台抢答</button>
+  <button class="rtab" data-r="4" onclick="switchPanel(4)">④ 识图找茬</button>
+  <button class="rtab" data-r="5" onclick="switchPanel(5)">⑤ 服务飞花令</button>
+</div>
+
+<!-- main -->
+<div id="main">
+
+<!-- P0 赛前 -->
+<div class="panel active" id="panel-0">
+  <div class="card">
+    <div class="card-title">总分排名</div>
+    <div id="p0-ranking" class="teams-grid"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">出场顺序抽签 <span class="pill" id="p0-order-status">未抽签</span></div>
+    <div id="p0-order-disp" class="draw-order-row"></div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn-primary" onclick="doDraw()">抽签</button>
+      <button class="btn-ghost" id="btn-lock-order" style="display:none" onclick="doLockOrder()">锁定顺序</button>
+      <button class="btn-ghost btn-sm" id="btn-redraw" style="display:none" onclick="doRedraw()">重新抽签</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">第四环节图题分配 <span class="pill" id="p0-img-status">未分配</span></div>
+    <div id="p0-img-disp" class="draw-order-row"></div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn-primary" onclick="doDrawImages()">随机分配图题</button>
+      <button class="btn-ghost" id="btn-lock-images" style="display:none" onclick="doLockImages()">锁定分配</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">题库</div>
+    <div id="p0-qstats" class="row" style="margin-bottom:8px"></div>
+    <div class="row">
+      <button class="btn-ghost btn-sm" onclick="document.getElementById('q-file-input').click()">导入题库 JSON</button>
+      <input type="file" id="q-file-input" accept=".json" style="display:none" onchange="loadQFile(this)">
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:var(--red)">危险操作</div>
+    <div class="row">
+      <button class="btn-danger btn-sm" onclick="if(confirm('确定清空所有分数？'))clearAllScores()&&render()">清空所有分数</button>
+      <button class="btn-warn btn-sm" onclick="if(confirm('重置抽签？'))doResetDraw()">重置抽签</button>
+    </div>
+  </div>
+</div>
+
+<!-- P1 个人必答 -->
+<div class="panel" id="panel-1">
+  <div class="card">
+    <div class="card-title">个人必答 <span class="pill">2.5分/题 · 上限20分/队</span></div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn-primary" onclick="r1Init()">开始本环节</button>
+      <button class="btn-warn btn-sm" onclick="r1ReadQ()">朗读题目</button>
+      <button class="btn-primary btn-sm" onclick="r1NextAnswerer()">下一题</button>
+      <label style="display:inline-flex;align-items:center;gap:3px;margin:0">倒计时<input type="number" id="r1-timer-sec" value="15" min="5" max="120" style="width:50px" onchange="state.r1.timerSec=+this.value;save()">秒</label>
+      <span id="r1-progress" style="color:var(--muted);font-size:12px"></span>
+    </div>
+    <!-- 当前答题人 -->
+    <div class="q-box" id="r1-answerer-box">
+      <div class="q-index">当前答题人</div>
+      <div id="r1-answerer-row" class="row"></div>
+    </div>
+    <!-- 翻牌 -->
+    <div style="margin-bottom:8px">
+      <div class="row" style="margin-bottom:6px">
+        <span style="font-size:12px;color:var(--muted)">翻牌选题</span>
+        <button class="btn-ghost btn-sm" onclick="r1InitDeck()">重置牌组</button>
+        <span id="r1-card-left" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div id="r1-flip-grid" class="flip-grid"></div>
+    </div>
+    <!-- 题目 -->
+    <div id="r1-q-box" class="q-box"><span style="color:var(--muted)">请翻牌或等待出题</span></div>
+    <!-- 判分（点击选项自动判分，以下按钮用于填空/超时等特殊情况） -->
+    <div class="row" style="margin-top:10px">
+      <button class="btn-success btn-sm" onclick="doR1(true)">手动判对</button>
+      <button class="btn-danger btn-sm" onclick="doR1(false)">答错/超时</button>
+      <button class="btn-ghost btn-sm" onclick="toggleShowAnswer()">公布答案</button>
+      <span style="font-size:11px;color:var(--muted)">← 点击选项可自动判分</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">各队得分 R1</div>
+    <div id="r1-scores" class="teams-grid"></div>
+  </div>
+</div>
+
+<!-- P2 团队共答 -->
+<div class="panel" id="panel-2">
+  <div class="card">
+    <div class="card-title">团队共答 <span class="pill">4题 · 5分/题 · 上限20分/队</span></div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn-primary" onclick="r2Init()">开始本环节</button>
+      <button class="btn-ghost btn-sm" onclick="r2ReadQ()">朗读题目</button>
+      <label style="display:inline-flex;align-items:center;gap:3px;margin:0">倒计时<input type="number" id="r2-timer-sec" value="40" min="5" max="300" style="width:50px" onchange="state.r2.timerSec=+this.value;save()">秒</label>
+      <span id="r2-progress" style="color:var(--muted);font-size:12px"></span>
+    </div>
+    <!-- 翻牌 -->
+    <div style="margin-bottom:8px">
+      <div class="row" style="margin-bottom:6px">
+        <span style="font-size:12px;color:var(--muted)">翻牌选题</span>
+        <button class="btn-ghost btn-sm" onclick="r2InitDeck()">重置牌组</button>
+        <span id="r2-card-left" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div id="r2-flip-grid" class="flip-grid" style="grid-template-columns:repeat(4,1fr)"></div>
+    </div>
+    <div id="r2-q-box" class="q-box"><span style="color:var(--muted)">请翻牌或等待出题</span></div>
+    <div style="margin-top:8px">
+      <div class="card-title">各队判分（同时亮板）</div>
+      <div id="r2-judge-panel"></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn-ghost btn-sm" onclick="toggleShowAnswer()">公布答案</button>
+      <button class="btn-primary btn-sm" onclick="r2Next()">下一题（翻牌）</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">各队得分 R2</div>
+    <div id="r2-scores" class="teams-grid"></div>
+  </div>
+</div>
+
+<!-- P3 擂台抢答 -->
+<div class="panel" id="panel-3">
+  <div class="card">
+    <div class="card-title">擂台抢答 <span class="pill">答对+2 · 答错-2 · 无上限</span></div>
+    <div id="r3-banner" class="buzz-banner buzz-idle anim-pulse" style="animation:none">待机中</div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn-primary" onclick="r3Init()">开始本环节</button>
+      <button class="btn-warn btn-lg" onclick="r3StartQ()">出题（朗读+开始抢答）</button>
+      <button class="btn-ghost btn-sm" onclick="r3SkipQ()">跳过此题</button>
+      <label style="display:inline-flex;align-items:center;gap:3px;margin:0">倒计时<input type="number" id="r3-timer-sec" value="15" min="5" max="120" style="width:50px" onchange="state.r3.timerSec=+this.value;save()">秒</label>
+      <span id="r3-progress" style="color:var(--muted);font-size:12px"></span>
+    </div>
+    <div id="r3-q-box" class="q-box"><span style="color:var(--muted)">点击【出题】开始</span></div>
+    <!-- 已抢答队伍 -->
+    <div id="r3-buzz-info" style="display:none" class="q-box">
+      <div class="q-index">抢答成功</div>
+      <div id="r3-buzz-team" class="row"></div>
+      <div style="margin-top:6px;font-size:12px;color:var(--muted)">选择回答队员：</div>
+      <div id="r3-member-btns" class="row" style="margin-top:4px"></div>
+    </div>
+    <!-- 判分 -->
+    <div class="row" style="margin-top:10px">
+      <button class="btn-success btn-sm" id="btn-r3-ok" onclick="doR3(true)" disabled>手动判对 +2</button>
+      <button class="btn-danger btn-sm" id="btn-r3-err" onclick="doR3(false)" disabled>手动判错 -2</button>
+      <button class="btn-warn" id="btn-r3-supp" onclick="doR3Supp()" disabled>开放补抢</button>
+      <button class="btn-ghost btn-sm" id="btn-r3-timeout" onclick="doR3Timeout()" disabled>超时</button>
+      <button class="btn-ghost btn-sm" onclick="doR3Reset()">重置抢答</button>
+      <button class="btn-ghost btn-sm" onclick="toggleShowAnswer()">公布答案</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">各队得分 R3</div>
+    <div id="r3-scores" class="teams-grid"></div>
+  </div>
+</div>
+
+<!-- P4 识图找茬 -->
+<div class="panel" id="panel-4">
+  <div class="card">
+    <div class="card-title">识图找茬 <span class="pill">每图10处 · 上限10分/队</span></div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn-primary" onclick="r4Init()">开始本环节</button>
+      <button class="btn-ghost btn-sm" onclick="r4Prev()">上一队</button>
+      <button class="btn-ghost btn-sm" onclick="r4Next()">下一队</button>
+      <button class="btn-warn btn-sm" onclick="r4StartTimer()">开始计时</button>
+      <label style="display:inline-flex;align-items:center;gap:3px;margin:0">倒计时<input type="number" id="r4-timer-sec" value="60" min="10" max="300" style="width:50px" onchange="state.r4.timerSec=+this.value;save()">秒</label>
+      <span id="r4-progress" style="color:var(--muted);font-size:12px"></span>
+    </div>
+    <div id="r4-team-bar" class="q-box">
+      <div id="r4-team-name" style="font-size:15px;font-weight:700"></div>
+      <div id="r4-image-key" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
+    </div>
+    <!-- 翻牌揭图 -->
+    <div style="margin-bottom:10px">
+      <div class="row" style="margin-bottom:6px">
+        <span style="font-size:12px;color:var(--muted)">翻牌揭题</span>
+        <button class="btn-ghost btn-sm" onclick="r4InitDeck()">重置牌组</button>
+      </div>
+      <div id="r4-flip-grid" class="flip-grid" style="grid-template-columns:repeat(5,1fr)"></div>
+    </div>
+    <!-- 找茬打分 -->
+    <div class="card-title">评委找茬打分（勾选已找到的违规点）</div>
+    <div id="r4-spot-grid" class="spot-grid"></div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn-ghost btn-sm" onclick="r4AddExtra()">+ 额外认定</button>
+      <span id="r4-extra-list" style="font-size:12px;color:var(--muted)"></span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn-success btn-lg" onclick="doR4Score()">结算本队得分</button>
+      <span id="r4-found-count" style="font-size:14px;color:var(--muted)"></span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">各队得分 R4</div>
+    <div id="r4-scores" class="teams-grid"></div>
+  </div>
+</div>
+
+<!-- P5 飞花令 -->
+<div class="panel" id="panel-5">
+  <div class="card">
+    <div class="card-title">服务飞花令 <span class="pill">有效+1 · 擂主+3 · 无上限</span></div>
+    <div class="row" style="margin-bottom:8px">
+      <button class="btn-primary" onclick="r5Init()">开始本环节</button>
+      <label style="display:inline-flex;align-items:center;gap:3px;margin:0">每轮倒计时<input type="number" id="r5-timer-sec" value="10" min="3" max="60" style="width:50px" onchange="state.r5.timerSec=+this.value;save()">秒</label>
+      <span id="r5-theme-label" style="font-size:15px;font-weight:700;color:var(--accent)"></span>
+    </div>
+    <div id="r5-theme-btns" class="row" style="margin-bottom:10px"></div>
+    <div id="r5-turn-banner" class="buzz-banner buzz-idle">待机</div>
+    <div id="r5-team-rows" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn-ghost btn-sm" onclick="r5NextTheme()">下一令题</button>
+      <button class="btn-warn btn-sm" onclick="r5ManualWinner()">手动设擂主 +3</button>
+    </div>
+    <div style="margin-top:10px">
+      <div class="card-title">已用有效答案</div>
+      <div id="r5-used" style="font-size:12px;color:var(--muted);line-height:1.8"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">各队得分 R5</div>
+    <div id="r5-scores" class="teams-grid"></div>
+  </div>
+</div>
+
+</div><!-- #main -->
+
+<!-- timer bar -->
+<div id="timer-bar">
+  <div id="timer-display">--</div>
+  <progress id="timer-prog" value="0" max="100"></progress>
+  <div class="row" style="flex-shrink:0">
+    <button class="btn-ghost btn-sm" id="btn-timer-pp" onclick="doTimerPP()">暂停/继续</button>
+    <button class="btn-ghost btn-sm" onclick="resetTimer();renderTimer()">重置</button>
+  </div>
+  <div style="font-size:12px;color:var(--muted);flex-shrink:0">
+    <span class="tts-dot" id="tts-dot"></span>TTS
+  </div>
+</div>
+
+<!-- bottom bar -->
+<div id="bottom-bar">
+  <span style="font-size:12px;color:var(--muted)">抢答器：</span>
+  <span id="km-hint" style="font-size:12px;color:var(--muted)"></span>
+  <div class="spacer"></div>
+  <button class="btn-ghost btn-sm" onclick="toggleShowAnswer()">公布/隐藏答案</button>
+  <button class="btn-ghost btn-sm" onclick="toggleShowScoresBTN()">显示/隐藏大屏分数</button>
+  <button class="btn-ghost btn-sm" onclick="toggleHistPanel()">历史记录</button>
+</div>
+
+<!-- history panel -->
+<div id="hist-panel">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+    <strong style="font-size:13px">得分历史</strong>
+    <button class="btn-ghost btn-sm" onclick="toggleHistPanel()">×</button>
+  </div>
+  <div id="history-list"></div>
+</div>
+
+<!-- settings overlay -->
+<div id="settings-overlay">
+  <div id="settings-modal">
+    <h2 style="font-size:17px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
+      设置
+      <button class="btn-ghost btn-sm" onclick="closeSettings()">× 关闭</button>
+    </h2>
+
+    <div class="s-section">
+      <h3>品牌</h3>
+      <div class="row">
+        <div><label>公司名称</label><input id="s-brand" type="text" style="width:180px" oninput="setBrandName(this.value)"></div>
+        <div><label>Logo 图片</label>
+          <button class="btn-ghost btn-sm" onclick="document.getElementById('logo-file').click()">上传</button>
+          <input type="file" id="logo-file" accept="image/*" style="display:none" onchange="loadLogo(this)">
+        </div>
+      </div>
+    </div>
+    <div class="sep"></div>
+
+    <div class="s-section">
+      <h3>队伍信息</h3>
+      <div id="team-editors"></div>
+      <button class="btn-ghost btn-sm" style="margin-top:6px" onclick="resetTeams();openSettings()">重置队伍</button>
+    </div>
+    <div class="sep"></div>
+
+    <div class="s-section">
+      <h3>抢答器键位（第三环节）</h3>
+      <div id="keymap-editors"></div>
+    </div>
+    <div class="sep"></div>
+
+    <div class="s-section">
+      <h3>语音朗读 TTS</h3>
+      <div class="row" style="margin-bottom:8px">
+        <label style="display:flex;align-items:center;gap:6px;margin:0">
+          <input type="checkbox" id="s-tts-on" onchange="saveTTS()"> 启用
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;margin:0">
+          <input type="checkbox" id="s-tts-auto" onchange="saveTTS()"> 切题自动朗读
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;margin:0">
+          <input type="checkbox" id="s-tts-cd" onchange="saveTTS()"> 倒计时播报
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;margin:0">
+          <input type="checkbox" id="s-tts-opts" onchange="saveTTS()"> 朗读选项
+        </label>
+      </div>
+      <div class="row">
+        <div><label>声音</label><select id="s-tts-voice" style="width:200px" onchange="saveTTS()"><option value="">系统默认</option></select></div>
+        <div><label>语速 <span id="s-rate-val"></span></label><input type="range" id="s-tts-rate" min="0.5" max="2" step="0.1" style="width:100px" oninput="document.getElementById('s-rate-val').textContent='×'+this.value" onchange="saveTTS()"></div>
+        <div><label>音量</label><input type="range" id="s-tts-vol" min="0" max="1" step="0.1" style="width:80px" onchange="saveTTS()"></div>
+        <button class="btn-ghost btn-sm" onclick="speak('荣资商厦服务技能大赛，语音测试一二三四五')">测试</button>
+      </div>
+    </div>
+    <div class="sep"></div>
+
+    <!-- force override hidden section -->
+    <div class="s-section">
+      <div id="force-hint" style="cursor:pointer;font-size:12px;color:var(--muted);text-align:center;padding:4px" onclick="forceHintClick()">▸ 高级选项（点击三次解锁）</div>
+      <div id="force-section" style="display:none">
+        <h3 style="color:var(--red)">强制覆盖出场顺序</h3>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:8px">仅限紧急情况。将覆盖已锁定的抽签顺序，操作被记录在日志中。</p>
+        <div style="margin-bottom:6px">
+          <label>新顺序（队伍ID，空格分隔，共5个）</label>
+          <input id="s-force-order" type="text" placeholder="例：3 1 5 2 4" style="width:100%">
+        </div>
+        <div style="margin-bottom:8px">
+          <label>操作人姓名（必填）</label>
+          <input id="s-force-op" type="text" placeholder="姓名" style="width:100%">
+        </div>
+        <button class="btn-danger" onclick="doForceOverride()">强制覆盖</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── 页面状态 ────────────────────────────────────
+let curPanel = 0;
+let timerRaf = null;
+const cdSpoken = new Set();
+
+// ── 颜色工具 ────────────────────────────────────
+const COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7'];
+function tColor(team) {
+  const i = state.teams.findIndex(t => t.id === team.id);
+  return COLORS[i % 5];
+}
+
+// ── 切面板 ──────────────────────────────────────
+function switchPanel(n) {
+  curPanel = n;
+  if (n === 0) {
+    state.currentRound = 0;
+    state.displayMode = 'question';
+    state.showAnswerOnDisplay = false;
+    state.showScoresOnDisplay = false;
+    save();
+  } else if (n >= 1 && n <= 5) {
+    // 切换标签时同步 display：如已有对应环节的牌组则显示翻牌，否则显示题目
+    state.currentRound = n;
+    state.showAnswerOnDisplay = false;
+    state.showScoresOnDisplay = false;
+    if (state.cardFlip.rounds[n] && state.cardFlip.context?.round === n && state.cardFlip.cards?.length) {
+      state.displayMode = 'cardflip';
+      state.cardFlip.flipPulse++;
+    } else {
+      state.displayMode = 'question';
+    }
+    save();
+  }
+  document.querySelectorAll('.rtab').forEach(t => t.classList.toggle('active', +t.dataset.r === n));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === `panel-${n}`));
+  render();
+}
+
+// ── 主渲染 ──────────────────────────────────────
+function render() {
+  renderTopbar();
+  renderTimer();
+  renderKmHint();
+  renderHistory();
+  if (curPanel === 0) renderP0();
+  if (curPanel === 1) renderP1();
+  if (curPanel === 2) renderP2();
+  if (curPanel === 3) renderP3();
+  if (curPanel === 4) renderP4();
+  if (curPanel === 5) renderP5();
+}
+
+function renderTopbar() {
+  const ROUND_NAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令'];
+  const ROUND_CLS   = ['badge-blue','badge-yellow','badge-yellow','badge-red','badge-green','badge-purple'];
+  const b = document.getElementById('round-badge');
+  b.textContent = ROUND_NAMES[state.currentRound] || '赛前';
+  b.className = 'badge ' + (ROUND_CLS[state.currentRound] || 'badge-blue');
+  const li = document.getElementById('logo-img');
+  if (state.logo) { li.src = state.logo; li.style.display = ''; } else li.style.display = 'none';
+  document.getElementById('brand-text').textContent = state.brandName || '荣资商厦服务技能大赛';
+}
+
+function renderTimer() {
+  const rem = getRemainingMs();
+  const ts  = state.timer.state;
+  const disp = document.getElementById('timer-display');
+  const prog = document.getElementById('timer-prog');
+  const dot  = document.getElementById('tts-dot');
+  dot.className = 'tts-dot' + (window.speechSynthesis?.speaking ? ' on' : '');
+
+  if (ts === 'idle') { disp.textContent = '--'; prog.value = 0; disp.className = ''; return; }
+  if (ts === 'expired') { disp.textContent = '0'; prog.value = 0; disp.className = 'danger'; return; }
+
+  const dur = state.timer.durationMs || 1;
+  prog.value = Math.round(rem / dur * 100);
+  disp.textContent = fmtMs(rem);
+  disp.className = rem <= 5000 ? 'danger' : rem <= 10000 ? 'warn' : '';
+
+  // TTS 倒计时
+  if (state.tts.readCountdown && state.tts.enabled) {
+    const secs = Math.ceil(rem / 1000);
+    const at = state.tts.countdownAt || [10,5,3,2,1];
+    if (at.includes(secs) && !cdSpoken.has(secs)) {
+      cdSpoken.add(secs);
+      speak(String(secs));
+    }
+  }
+  // 自动超时
+  if (ts === 'running' && rem === 0) {
+    expireTimer();
+    cdSpoken.clear();
+  }
+}
+
+function fmtMs(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(s / 60), ss = s % 60;
+  return m > 0 ? `${m}:${String(ss).padStart(2,'0')}` : String(ss);
+}
+
+function renderKmHint() {
+  const km = state.keymap || {};
+  const parts = Object.entries(km).map(([tid, keys]) => {
+    const t = state.teams.find(t => t.id === +tid);
+    return t && keys.length ? `${keys[0]}=${t.name}` : '';
+  }).filter(Boolean);
+  document.getElementById('km-hint').textContent = parts.join(' | ');
+}
+
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  const h = [...(state.history || [])].reverse().slice(0, 30);
+  list.innerHTML = h.map(e => {
+    const time = new Date(e.ts).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const cls = (e.delta||0) >= 0 ? 'pos' : 'neg';
+    return `<div class="hist-item ${cls}"><span class="hist-time">${time}</span>
+      <span>${escapeHtml(e.teamName||'')} ${(e.delta||0)>=0?'+':''}${e.delta||0} (${e.reason||''})</span></div>`;
+  }).join('');
+}
+
+// ── P0 渲染 ─────────────────────────────────────
+function renderP0() {
+  // 排名
+  const ranking = getRanking();
+  document.getElementById('p0-ranking').innerHTML = ranking.map((r, i) => {
+    const c = tColor(r.team);
+    return `<div class="team-card" style="border-color:${c}55">
+      <div style="color:${c};font-size:11px">#${i+1}</div>
+      <div class="team-name" style="color:${c}">${escapeHtml(r.team.name)}</div>
+      <div class="team-score-big" style="color:${c}">${r.total}</div>
+      <div class="team-sub">R1:${r.team.scores.r1||0} R2:${r.team.scores.r2||0} R3:${r.team.scores.r3||0} R4:${r.team.scores.r4||0} R5:${r.team.scores.r5||0}</div>
+    </div>`;
+  }).join('');
+
+  // 出场顺序
+  const order = state.draw.teamOrder;
+  const oSt = document.getElementById('p0-order-status');
+  const oD  = document.getElementById('p0-order-disp');
+  if (order.length) {
+    oSt.textContent = state.draw.orderLocked ? '已锁定' : '已抽签';
+    oD.innerHTML = order.map((tid, i) => {
+      const t = state.teams.find(t => t.id === tid);
+      const c = tColor(t || {id:tid});
+      return `<div class="draw-slot" style="border-color:${c}66">
+        <span class="slot-num">第${i+1}位</span>
+        <span class="slot-name" style="color:${c}">${escapeHtml(t?.name||'?')}</span>
+        <span class="slot-num">ID:${tid}</span>
+      </div>`;
+    }).join('');
+    document.getElementById('btn-lock-order').style.display = state.draw.orderLocked ? 'none' : '';
+    document.getElementById('btn-redraw').style.display = state.draw.orderLocked ? 'none' : '';
+  } else {
+    oSt.textContent = '未抽签';
+    oD.innerHTML = '';
+    document.getElementById('btn-lock-order').style.display = 'none';
+    document.getElementById('btn-redraw').style.display = 'none';
+  }
+
+  // 图题分配
+  const imgMap = state.draw.r4ImageMap || {};
+  const iSt = document.getElementById('p0-img-status');
+  const iD  = document.getElementById('p0-img-disp');
+  if (Object.keys(imgMap).length) {
+    iSt.textContent = state.draw.imageLocked ? '已锁定' : '已分配';
+    iD.innerHTML = order.map(tid => {
+      const t = state.teams.find(t => t.id === tid);
+      const c = tColor(t || {id:tid});
+      return `<div class="draw-slot" style="border-color:${c}66">
+        <span class="slot-name" style="color:${c}">${escapeHtml(t?.name||'?')}</span>
+        <span class="slot-num">${escapeHtml(imgMap[tid]||'-')}</span>
+      </div>`;
+    }).join('');
+    document.getElementById('btn-lock-images').style.display = state.draw.imageLocked ? 'none' : '';
+  } else {
+    iSt.textContent = '未分配';
+    iD.innerHTML = '';
+    document.getElementById('btn-lock-images').style.display = 'none';
+  }
+
+  // 题库
+  const qs = state.questions;
+  document.getElementById('p0-qstats').innerHTML = qs.length
+    ? `<span style="color:var(--green)">已加载 ${qs.length} 道题</span>
+       <span style="color:var(--muted);font-size:12px">R1:${qs.filter(q=>q.round===1).length} R2:${qs.filter(q=>q.round===2).length} R3:${qs.filter(q=>q.round===3).length} R4:${qs.filter(q=>q.round===4).length} R5:${qs.filter(q=>q.round===5).length}</span>`
+    : `<span style="color:var(--red)">尚未加载题库</span>`;
+}
+
+// ── P1 渲染 ─────────────────────────────────────
+function renderP1() {
+  const tIdx = state.r1.currentTeamIdx;
+  const mIdx = state.r1.currentMemberIdx;
+  const team = getTeamByIdx(tIdx);
+  const c    = team ? tColor(team) : '#888';
+
+  document.getElementById('r1-progress').textContent =
+    `第${tIdx+1}队 / 队员${mIdx+1} · 已答${state.r1.usedQIds.length}题`;
+
+  document.getElementById('r1-answerer-row').innerHTML = team
+    ? `<span style="color:${c};font-weight:700;font-size:15px">${escapeHtml(team.name)}</span>`
+    + team.members.map((m,i) =>
+        `<button class="member-btn${i===mIdx?' active':''}" onclick="r1SetMem(${i})">${escapeHtml(m)}</button>`
+      ).join('')
+    : '<span style="color:var(--muted)">请先抽签</span>';
+
+  // 题目
+  renderQBox('r1-q-box', state.r1.currentQIdx, true);
+
+  // 翻牌
+  const cards = state.cardFlip.context?.round === 1 ? state.cardFlip.cards : [];
+  renderFlipGrid('r1-flip-grid', cards, 'r1');
+  document.getElementById('r1-card-left').textContent =
+    cards.length ? `剩余 ${getAvailableCards().length}/${cards.length} 张` : '';
+
+  renderRoundScores('r1-scores', 'r1');
+  document.getElementById('r1-timer-sec').value = state.r1.timerSec;
+}
+
+// ── P2 渲染 ─────────────────────────────────────
+function renderP2() {
+  document.getElementById('r2-progress').textContent =
+    `已用 ${state.r2.usedQIds.length}/4 题`;
+  // 翻牌
+  const r2cards = state.cardFlip.context?.round === 2 ? state.cardFlip.cards : [];
+  renderFlipGrid('r2-flip-grid', r2cards, 'r2');
+  document.getElementById('r2-card-left').textContent =
+    r2cards.length ? `剩余 ${r2cards.filter(c=>!c.revealed&&!c.used).length}/${r2cards.length} 张` : '';
+  renderQBox('r2-q-box', state.r2.currentQIdx);
+
+  const q = state.r2.currentQIdx != null ? state.questions[state.r2.currentQIdx] : null;
+  document.getElementById('r2-judge-panel').innerHTML = state.teams.map(team => {
+    const c = tColor(team);
+    return `<div class="team-card" style="border-color:${c}55;margin-bottom:8px;text-align:left">
+      <div style="color:${c};font-weight:700;font-size:14px;margin-bottom:6px">${escapeHtml(team.name)}</div>
+      ${renderR2JudgeInputs(team.id, q)}
+      <div class="row" style="margin-top:6px">
+        <button class="btn-success btn-sm" onclick="doR2Score(${team.id},true)">得分</button>
+        <button class="btn-danger btn-sm" onclick="doR2Score(${team.id},false)">0分</button>
+      </div>
+    </div>`;
+  }).join('');
+  renderRoundScores('r2-scores', 'r2');
+  document.getElementById('r2-timer-sec').value = state.r2.timerSec;
+}
+
+function renderR2JudgeInputs(teamId, q) {
+  if (!q) return '<span style="color:var(--muted);font-size:12px">请选择题目</span>';
+  if (q.type === 'multi' && q.options) {
+    return '<div class="row">' + q.options.map((opt,i) => {
+      const l = 'ABCDE'[i];
+      return `<label style="font-size:12px;display:flex;align-items:center;gap:3px;cursor:pointer">
+        <input type="checkbox" id="r2c-${teamId}-${i}" value="${l}"> ${l}.${escapeHtml(opt)}</label>`;
+    }).join('') + '</div>';
+  }
+  if (q.type === 'fill_multi' && q.blanks) {
+    return q.blanks.map((b,i) =>
+      `<div style="margin-bottom:4px"><label style="font-size:11px">第${i+1}空</label>
+       <input type="text" id="r2b-${teamId}-${i}" placeholder="${escapeHtml(b.hint||'')}" style="width:100%"></div>`
+    ).join('');
+  }
+  return '<span style="color:var(--muted);font-size:12px">题型不支持</span>';
+}
+
+// ── P3 渲染 ─────────────────────────────────────
+function renderP3() {
+  const bs = state.r3.buzzState;
+  const bannerMap = {
+    idle: {text:'待机中 — 点击【出题】开始', cls:'buzz-idle', anim:false},
+    reading: {text:'正在朗读题目...', cls:'buzz-reading', anim:true},
+    armed: {text:'开始抢答！', cls:'buzz-armed', anim:true},
+    locked: {text:`${state.teams.find(t=>t.id===state.r3.buzzedTeam)?.name||'?'} 抢答成功`, cls:'buzz-locked', anim:false},
+    supplement: {text:'开放补抢！', cls:'buzz-supplement', anim:true},
+  };
+  const bm = bannerMap[bs] || bannerMap.idle;
+  const banner = document.getElementById('r3-banner');
+  banner.textContent = bm.text;
+  banner.className = `buzz-banner ${bm.cls}${bm.anim?' anim-pulse':''}`;
+
+  document.getElementById('r3-progress').textContent = `已用 ${state.r3.usedQIds.length}/25 题`;
+  renderQBox('r3-q-box', state.r3.currentQIdx, true);
+
+  const bi = document.getElementById('r3-buzz-info');
+  if (bs === 'locked' || bs === 'supplement') {
+    bi.style.display = '';
+    const buzzTeam = state.teams.find(t => t.id === state.r3.buzzedTeam);
+    const c = buzzTeam ? tColor(buzzTeam) : '#888';
+    document.getElementById('r3-buzz-team').innerHTML =
+      `<span style="color:${c};font-weight:700;font-size:16px">${escapeHtml(buzzTeam?.name||'?')}</span>`;
+    document.getElementById('r3-member-btns').innerHTML = buzzTeam
+      ? buzzTeam.members.map((m,i) =>
+          `<button class="member-btn${i===state.r3.selectedMember?' active':''}" onclick="r3SetMem(${i})">${escapeHtml(m)}</button>`
+        ).join('')
+      : '';
+  } else {
+    bi.style.display = 'none';
+  }
+
+  const canScore = bs === 'locked' && state.r3.selectedTeam != null && state.r3.selectedMember != null;
+  document.getElementById('btn-r3-ok').disabled   = !canScore;
+  document.getElementById('btn-r3-err').disabled  = !canScore;
+  document.getElementById('btn-r3-supp').disabled = bs !== 'locked' || state.r3.supplementUsed;
+  document.getElementById('btn-r3-timeout').disabled = (bs !== 'armed' && bs !== 'locked');
+
+  renderRoundScores('r3-scores', 'r3');
+  document.getElementById('r3-timer-sec').value = state.r3.timerSec;
+}
+
+// ── P4 渲染 ─────────────────────────────────────
+function renderP4() {
+  const tIdx = state.r4.currentTeamIdx;
+  const team = getTeamByIdx(tIdx);
+  const c    = team ? tColor(team) : '#888';
+  document.getElementById('r4-team-name').innerHTML =
+    team ? `<span style="color:${c}">第${tIdx+1}队：${escapeHtml(team.name)}</span>` : '请先抽签并开始本环节';
+  document.getElementById('r4-image-key').textContent =
+    team ? `分配图题：${state.draw.r4ImageMap[team.id]||'未分配'}` : '';
+  document.getElementById('r4-progress').textContent = `${tIdx+1}/5 队`;
+
+  // 翻牌
+  const cards = state.cardFlip.context?.round === 4 ? state.cardFlip.cards : [];
+  renderFlipGrid('r4-flip-grid', cards, 'r4');
+
+  // 找茬点
+  const q = state.r4.currentQIdx != null ? state.questions[state.r4.currentQIdx] : null;
+  const spots = (q?.spots?.length ? q.spots : defaultR4Spots());
+  document.getElementById('r4-spot-grid').innerHTML = spots.map(s => {
+    const checked = !!state.r4.spotJudge[s.key];
+    return `<div class="spot-item${checked?' checked':''}" onclick="r4ToggleSpot('${escapeAttr(s.key)}')">
+      <input type="checkbox" ${checked?'checked':''} style="pointer-events:none">
+      <label style="pointer-events:none">${escapeHtml(s.label)}</label>
+    </div>`;
+  }).join('');
+
+  const extras = state.r4.extraSpots || [];
+  document.getElementById('r4-extra-list').textContent = extras.map(e => e.desc).join('、') || '';
+  const found = Object.values(state.r4.spotJudge).filter(Boolean).length + extras.length;
+  document.getElementById('r4-found-count').textContent = `已找 ${found} 处 → 得 ${Math.min(found,10)} 分`;
+
+  renderRoundScores('r4-scores', 'r4');
+  document.getElementById('r4-timer-sec').value = state.r4.timerSec;
+}
+
+function defaultR4Spots() {
+  return [
+    {key:'a1',label:'仪容仪表 1'},{key:'a2',label:'仪容仪表 2'},
+    {key:'b1',label:'站姿举止 1'},{key:'b2',label:'站姿举止 2'},
+    {key:'c1',label:'服务行为 1'},{key:'c2',label:'服务行为 2'},
+    {key:'d1',label:'卫生管理 1'},{key:'d2',label:'卫生管理 2'},
+    {key:'e1',label:'纪律安全 1'},{key:'e2',label:'纪律安全 2'},
+  ];
+}
+
+// ── P5 渲染 ─────────────────────────────────────
+function renderP5() {
+  const themes = state.questions.filter(q => q.round === 5 && q.type === 'theme');
+  const thIdx  = state.r5.currentThemeIdx;
+  const curTheme = themes[thIdx];
+  document.getElementById('r5-theme-label').textContent = curTheme ? `令题：${curTheme.stem}` : '';
+  document.getElementById('r5-theme-btns').innerHTML = themes.map((t,i) =>
+    `<button class="${i===thIdx?'btn-primary':'btn-ghost'} btn-sm" onclick="r5SetTheme(${i})">${escapeHtml(t.stem||`令题${i+1}`)}</button>`
+  ).join('') || '<span style="color:var(--muted);font-size:12px">题库中暂无飞花令令题（round:5, type:theme）</span>';
+
+  const tOrder = state.r5.teamOrder.length ? state.r5.teamOrder : state.teams.map(t=>t.id);
+  const active = state.r5.activeTeams || [];
+  const curId  = tOrder[state.r5.currentTurnIdx];
+  const curT   = state.teams.find(t=>t.id===curId);
+  const banner = document.getElementById('r5-turn-banner');
+  if (curT && active.includes(curId)) {
+    const c = tColor(curT);
+    banner.textContent = `轮到：${curT.name}`;
+    banner.className = 'buzz-banner buzz-armed anim-pulse';
+    banner.style.cssText += `;border-color:${c};color:${c}`;
+  } else {
+    banner.textContent = '待机';
+    banner.className = 'buzz-banner buzz-idle';
+    banner.style.cssText = '';
+  }
+
+  document.getElementById('r5-team-rows').innerHTML = tOrder.map(tid => {
+    const t = state.teams.find(t=>t.id===tid);
+    if (!t) return '';
+    const c    = tColor(t);
+    const isCur= tid===curId && active.includes(tid);
+    const isOut= !active.includes(tid);
+    return `<div class="flower-row${isCur?' cur':''}${isOut?' out':''}">
+      <div style="color:${c};font-weight:700;min-width:60px">${escapeHtml(t.name)}</div>
+      <div style="font-weight:700;color:var(--accent);min-width:50px">R5:${t.scores.r5||0}</div>
+      <div style="flex:1;font-size:12px;color:var(--muted)">${isOut?'[已出局]':''}</div>
+      ${!isOut ? `<button class="btn-success btn-sm" onclick="r5DoValid(${tid})">有效</button>
+                  <button class="btn-danger btn-sm" onclick="r5DoElim(${tid})">出局</button>` : ''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('r5-used').textContent =
+    (state.r5.usedAnswers||[]).map((a,i)=>`${i+1}.${a.answer}`).join('  ') || '（暂无）';
+
+  renderRoundScores('r5-scores', 'r5');
+  document.getElementById('r5-timer-sec').value = state.r5.timerSec;
+}
+
+// ── 通用题目渲染 ─────────────────────────────────
+function renderQBox(elId, qIdx, interactive) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (qIdx == null) { el.innerHTML = '<span style="color:var(--muted)">请选择题目</span>'; return; }
+  const q = state.questions[qIdx];
+  if (!q) { el.innerHTML = '<span style="color:var(--muted)">题目不存在</span>'; return; }
+  const showAns = state.showAnswerOnDisplay;
+  const typeMap = {single:'单选',multi:'多选',fill:'填空',fill_multi:'多空',judge:'判断',theme:'令题',spot:'找茬'};
+  let html = `<div class="q-index">${escapeHtml(String(q.id||''))} · ${typeMap[q.type]||q.type}</div>
+    <div class="q-stem">${escapeHtml(q.stem||'')}</div>`;
+  if (q.options?.length) {
+    const isMulti = q.type === 'multi';
+    if (interactive && (q.type === 'single' || q.type === 'multi' || q.type === 'judge')) {
+      const selKey = `_sel_${elId}`;
+      const selected = window[selKey] || [];
+      html += `<div class="q-options">` + q.options.map((opt,i) => {
+        const l = 'ABCDE'[i];
+        const isSel = selected.includes(l);
+        return `<div class="q-option${isSel?' selected':''}" style="cursor:pointer;${isSel?'background:#1e3a5f;border-color:var(--accent);color:#93c5fd':''}" onclick="toggleOptSel('${elId}','${l}',${isMulti})">${l}. ${escapeHtml(opt)}</div>`;
+      }).join('') + '</div>';
+      if (isMulti) {
+        html += `<div style="margin-top:6px"><button class="btn-primary btn-sm" onclick="submitMultiSel('${elId}')">提交多选答案</button></div>`;
+      }
+    } else {
+      html += '<div class="q-options">' + q.options.map((opt,i) => {
+        const l = 'ABCDE'[i];
+        const isCorrect = showAns && (Array.isArray(q.answer)?q.answer.includes(l):q.answer===l);
+        return `<div class="q-option${isCorrect?' correct':''}">${l}. ${escapeHtml(opt)}</div>`;
+      }).join('') + '</div>';
+    }
+  }
+  if (q.blanks?.length && q.type === 'fill_multi') {
+    html += '<div style="margin-top:6px;font-size:12px;color:var(--muted)">填空：' +
+      q.blanks.map((b,i)=>`第${i+1}空：${escapeHtml(b.hint||b.answer||'')}`).join(' / ') + '</div>';
+  }
+  if (showAns && q.answer) {
+    const ans = Array.isArray(q.answer) ? q.answer.join('、') : String(q.answer);
+    html += `<div class="q-answer">答案：${escapeHtml(ans)}</div>`;
+  }
+  el.innerHTML = html;
+}
+
+// ── 选项交互（选择选手的答案） ───────────────────
+function toggleOptSel(elId, letter, isMulti) {
+  const selKey = `_sel_${elId}`;
+  let selected = window[selKey] || [];
+  if (isMulti) {
+    if (selected.includes(letter)) selected = selected.filter(l => l !== letter);
+    else selected.push(letter);
+    window[selKey] = selected;
+    render();
+  } else {
+    // 单选/判断：点击即提交
+    window[selKey] = [letter];
+    autoJudge(elId, [letter]);
+  }
+}
+
+function submitMultiSel(elId) {
+  const selKey = `_sel_${elId}`;
+  const selected = window[selKey] || [];
+  if (!selected.length) return alert('请先选择选项');
+  autoJudge(elId, selected);
+}
+
+function autoJudge(elId, selected) {
+  const selKey = `_sel_${elId}`;
+  if (elId === 'r1-q-box') {
+    const q = state.r1.currentQIdx != null ? state.questions[state.r1.currentQIdx] : null;
+    if (!q) return;
+    const correct = checkAnswer(q, selected);
+    window[selKey] = [];
+    doR1(correct);
+  } else if (elId === 'r3-q-box') {
+    const q = state.r3.currentQIdx != null ? state.questions[state.r3.currentQIdx] : null;
+    if (!q) return;
+    const correct = checkAnswer(q, selected);
+    window[selKey] = [];
+    doR3(correct);
+  }
+}
+
+function checkAnswer(q, selected) {
+  const answer = q.answer;
+  if (Array.isArray(answer)) {
+    // 多选：必须完全匹配
+    const sorted1 = [...selected].sort().join(',');
+    const sorted2 = [...answer].sort().join(',');
+    return sorted1 === sorted2;
+  }
+  // 单选/判断
+  return selected.length === 1 && selected[0] === answer;
+}
+
+// ── 翻牌网格渲染 ─────────────────────────────────
+function renderFlipGrid(elId, cards, ctx) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!cards?.length) { el.innerHTML = ''; return; }
+  el.innerHTML = cards.map(card => {
+    const num = card.cardNum || '?';
+    if (card.used) return `<div class="flip-card used">${num}<br><small>已用</small></div>`;
+    if (card.revealed) return `<div class="flip-card revealed">${num}<br><small>翻转中...</small></div>`;
+    return `<div class="flip-card" onclick="doFlipCard('${escapeAttr(card.id)}')">${num}</div>`;
+  }).join('');
+}
+
+// ── 各队分数小格 ─────────────────────────────────
+function renderRoundScores(elId, rKey) {
+  document.getElementById(elId).innerHTML = state.teams.map(t => {
+    const c = tColor(t);
+    return `<div class="team-card" style="border-color:${c}55">
+      <div class="team-name" style="color:${c}">${escapeHtml(t.name)}</div>
+      <div class="team-score-big" style="color:${c}">${t.scores[rKey]||0}</div>
+      <div class="team-sub">总 ${teamTotal(t)}</div>
+      <div class="row" style="justify-content:center;margin-top:4px">
+        <button class="btn-ghost btn-sm" onclick="doAdj(${t.id},'${rKey}',1)">+1</button>
+        <button class="btn-ghost btn-sm" onclick="doAdj(${t.id},'${rKey}',-1)">-1</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ────────────────────────────────────────────────
+// 抢答器按键
+// ────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  if (curPanel !== 3) return;
+  const km = state.keymap || {};
+  for (const [tid, keys] of Object.entries(km)) {
+    if (keys.includes(e.key)) {
+      r3TryBuzz(+tid);
+      break;
+    }
+  }
+});
+
+// ────────────────────────────────────────────────
+// 计时器轮询
+// ────────────────────────────────────────────────
+function timerLoop() {
+  renderTimer();
+  requestAnimationFrame(timerLoop);
+}
+requestAnimationFrame(timerLoop);
+
+// ────────────────────────────────────────────────
+// 操作函数
+// ────────────────────────────────────────────────
+
+// ── 抽签 ─────────────────────────────────────────
+function doDraw() {
+  drawTeamOrder();
+  document.getElementById('btn-lock-order').style.display = '';
+  document.getElementById('btn-redraw').style.display = '';
+  render();
+}
+function doLockOrder() { lockDrawOrder(); render(); }
+function doRedraw() {
+  if (state.draw.orderLocked) return alert('已锁定。如需修改请使用设置中的强制覆盖功能。');
+  state.draw.teamOrder = []; save(); doDraw();
+}
+function doDrawImages() {
+  if (!state.draw.teamOrder.length) return alert('请先完成出场顺序抽签');
+  const spotQs = state.questions.filter(q => q.round === 4);
+  const keys = spotQs.length >= 5
+    ? spotQs.map(q => q.imageKey || String(q.id))
+    : ['图A','图B','图C','图D','图E'];
+  drawR4Images(keys);
+  document.getElementById('btn-lock-images').style.display = '';
+  render();
+}
+function doLockImages() { lockDrawImages(); render(); }
+function doResetDraw() { resetDraw(); render(); }
+
+function loadQFile(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (loadQuestions(data)) { alert(`成功加载 ${state.questions.length} 道题`); render(); }
+      else alert('格式错误，需要 { "questions": [...] }');
+    } catch(err) { alert('JSON 解析失败: ' + err.message); }
+  };
+  reader.readAsText(file, 'utf-8');
+  input.value = '';
+}
+
+// ── R1 个人必答 ───────────────────────────────────
+function r1Init() {
+  if (!state.draw.teamOrder.length) return alert('请先完成抽签');
+  initR1();
+  switchPanel(1);
+  initCardDeck(1);
+  render();
+}
+function r1SetMem(i) { state.r1.currentMemberIdx = i; save(); render(); }
+function r1ReadQ() {
+  if (state.r1.currentQIdx == null) return;
+  const q = state.questions[state.r1.currentQIdx];
+  if (!q) return;
+  speakQueue(buildQuestionSegments(q), () => {
+    startTimer(state.r1.timerSec * 1000, 1);
+    cdSpoken.clear();
+  });
+}
+function r1NextAnswerer() {
+  const order = state.draw.teamOrder;
+  let tIdx = state.r1.currentTeamIdx;
+  let mIdx = state.r1.currentMemberIdx + 1;
+  if (mIdx >= 4) { mIdx = 0; tIdx++; }
+  if (tIdx >= order.length) { alert('第一环节全部完成！'); return; }
+  state.r1.currentTeamIdx   = tIdx;
+  state.r1.currentMemberIdx = mIdx;
+  state.r1.currentQIdx      = null;
+  state.showAnswerOnDisplay  = false;
+  state.showScoresOnDisplay  = false;
+  state.displayMode = 'cardflip';
+  state.cardFlip.flipPulse++;
+  save(); render();
+}
+function doR1(correct) {
+  const event = scoreR1(correct);
+  if (!event) return alert('请先选择答题队员');
+  stopTimer(); cdSpoken.clear();
+  // 显示答案和分数
+  state.showAnswerOnDisplay = true;
+  state.showScoresOnDisplay = true;
+  save(); render();
+  // TTS 播报成绩
+  const team = state.teams.find(t => t.id === event.teamId);
+  const memberName = event.memberName || `队员${event.memberIdx+1}`;
+  const memberScore = team.memberScores[event.memberIdx] || 0;
+  const teamScore = team.scores.r1 || 0;
+  const total = teamTotal(team);
+  const resultText = correct
+    ? `回答正确，${memberName}得${scoreToSpeech(event.delta)}，个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`
+    : `回答错误，${memberName}个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
+  speak(resultText);
+}
+function r1InitDeck() { initCardDeck(1); render(); }
+function r2InitDeck() { initCardDeck(2); render(); }
+function r4InitDeck() { initCardDeck(4); render(); }
+function doFlipCard(id) {
+  const card = selectCard(id);
+  if (!card) return;
+  render();
+  const round = state.cardFlip.context?.round;
+
+  // 预加载题目
+  if (round === 1 && card.qId != null) {
+    const idx = state.questions.findIndex(q => q.id === card.qId);
+    if (idx >= 0) {
+      state.r1.currentQIdx = idx;
+      if (!state.r1.usedQIds.includes(card.qId)) state.r1.usedQIds.push(card.qId);
+    }
+  } else if (round === 2 && card.qId != null) {
+    const idx = state.questions.findIndex(q => q.id === card.qId);
+    if (idx >= 0) {
+      state.r2.currentQIdx = idx;
+      if (!state.r2.usedQIds.includes(card.qId)) state.r2.usedQIds.push(card.qId);
+    }
+  } else if (round === 4 && card.imageKey != null) {
+    const idx = state.questions.findIndex(q => q.imageKey === card.imageKey);
+    if (idx >= 0) {
+      state.r4.currentQIdx = idx;
+      state.r4.spotJudge = {};
+      state.r4.extraSpots = [];
+    }
+  }
+  state.showAnswerOnDisplay = false;
+  save();
+
+  // 1.5秒后自动确认（让display.html播完翻牌动画）
+  setTimeout(() => {
+    confirmFlip(id);
+    if (round === 1) {
+      if (state.tts.autoRead) r1ReadQ(); else { startTimer(state.r1.timerSec*1000, 1); cdSpoken.clear(); }
+    } else if (round === 2) {
+      if (state.tts.autoRead) r2ReadQ(); else { startTimer(state.r2.timerSec*1000, 2); cdSpoken.clear(); }
+    } else if (round === 4) {
+      startTimer(state.r4.timerSec*1000, 4); cdSpoken.clear();
+    }
+    render();
+  }, 1500);
+}
+
+// ── R2 团队共答 ───────────────────────────────────
+function r2Init() { initR2(); switchPanel(2); initCardDeck(2); render(); }
+function r2ReadQ() {
+  if (state.r2.currentQIdx == null) return;
+  speakQueue(buildQuestionSegments(state.questions[state.r2.currentQIdx]), () => {
+    startTimer(state.r2.timerSec * 1000, 2);
+    cdSpoken.clear();
+  });
+}
+function r2StartTimer() { startTimer(state.r2.timerSec*1000, 2); cdSpoken.clear(); }
+function r2Next() {
+  state.r2.currentQIdx = null;
+  state.showAnswerOnDisplay  = false;
+  state.showScoresOnDisplay  = false;
+  state.displayMode = 'cardflip';
+  state.cardFlip.flipPulse++;
+  save(); render();
+}
+function doR2Score(teamId, correct) {
+  const q = state.r2.currentQIdx != null ? state.questions[state.r2.currentQIdx] : null;
+  const team = state.teams.find(t=>t.id===teamId);
+  if (!team || !q) return;
+  const delta = correct ? 5 : 0;
+  const prev  = team.scores.r2 || 0;
+  const actual = Math.min(delta, 20 - prev);
+  team.scores.r2 = prev + Math.max(0, actual);
+  const event = { round:2, teamId, teamName:team.name, correct, delta:Math.max(0,actual), reason:correct?'correct':'wrong', ts:Date.now() };
+  logEvent(event);
+  state.showScoresOnDisplay = true;
+  save(); render();
+  // TTS 播报
+  const teamScore = team.scores.r2 || 0;
+  const total = teamTotal(team);
+  const text = correct
+    ? `${team.name}回答正确，得${scoreToSpeech(Math.max(0,actual))}，本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`
+    : `${team.name}回答错误`;
+  speak(text);
+}
+
+// ── R3 擂台抢答 ───────────────────────────────────
+function r3Init() { initR3(); switchPanel(3); render(); }
+function r3StartQ() {
+  const used = state.r3.usedQIds;
+  const pool = state.questions.filter(q => q.round === 3 && !used.includes(q.id));
+  if (!pool.length) return alert('第三环节题库已用完');
+  const q   = pool[0];
+  const idx = state.questions.indexOf(q);
+  used.push(q.id); save();
+  r3StartQuestion(idx, () => render());
+  render();
+}
+function r3SkipQ() {
+  state.r3.buzzState = 'idle'; state.r3.currentQIdx = null; stopTimer(); save(); render();
+}
+function r3SetMem(i) { r3SelectMember(i); render(); }
+function doR3(correct) {
+  const ev = r3Score(correct);
+  if (!ev) return alert('请先选择回答队员');
+  stopTimer(); cdSpoken.clear();
+  state.showAnswerOnDisplay = true;
+  state.showScoresOnDisplay = true;
+  save(); render();
+  // TTS 播报成绩
+  const team = state.teams.find(t => t.id === ev.teamId);
+  const memberName = ev.memberName || `队员${ev.memberIdx+1}`;
+  const memberScore = team.memberScores[ev.memberIdx] || 0;
+  const teamScore = team.scores.r3 || 0;
+  const total = teamTotal(team);
+  const resultText = correct
+    ? `回答正确，${memberName}加${scoreToSpeech(2)}，个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`
+    : `回答错误，${memberName}扣${scoreToSpeech(2)}，个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
+  speak(resultText);
+}
+function doR3Supp() { r3OpenSupplement(); render(); }
+function doR3Timeout() {
+  // 超时处理：仅在locked状态扣分
+  if (state.r3.buzzState === 'locked') {
+    const team = state.teams.find(t=>t.id===state.r3.selectedTeam);
+    if (team) {
+      team.scores.r3 = (team.scores.r3||0) - 2;
+      logEvent({round:3,teamId:team.id,teamName:team.name,correct:false,delta:-2,reason:'timeout',ts:Date.now()});
+    }
+  }
+  state.r3.buzzState = 'idle'; state.r3.buzzedTeam = null;
+  state.r3.selectedTeam = null; state.r3.selectedMember = null;
+  expireTimer(); save(); render();
+}
+function doR3Reset() {
+  state.r3.buzzState='idle'; state.r3.buzzedTeam=null;
+  state.r3.selectedTeam=null; state.r3.selectedMember=null;
+  stopTimer(); save(); render();
+}
+
+// ── R4 识图找茬 ───────────────────────────────────
+function r4Init() { initR4(); switchPanel(4); initCardDeck(4); render(); }
+function r4Prev() {
+  if (state.r4.currentTeamIdx > 0) {
+    state.r4.currentTeamIdx--;
+    state.r4.currentQIdx = null;
+    state.r4.spotJudge = {};
+    state.r4.extraSpots = [];
+    state.displayMode = 'cardflip';
+    state.cardFlip.flipPulse++;
+    save(); render();
+  }
+}
+function r4Next() {
+  if (state.r4.currentTeamIdx < 4) {
+    state.r4.currentTeamIdx++;
+    state.r4.currentQIdx = null;
+    state.r4.spotJudge = {};
+    state.r4.extraSpots = [];
+    state.showAnswerOnDisplay  = false;
+    state.showScoresOnDisplay  = false;
+    state.displayMode = 'cardflip';
+    state.cardFlip.flipPulse++;
+    save(); render();
+  } else {
+    alert('识图找茬全部完成！');
+  }
+}
+function r4StartTimer() { startTimer(state.r4.timerSec*1000, 4); cdSpoken.clear(); }
+function r4ToggleSpot(key) { state.r4.spotJudge[key] = !state.r4.spotJudge[key]; save(); render(); }
+function r4AddExtra() {
+  const desc = prompt('额外认定的违规点描述：');
+  if (desc?.trim()) { r4AddExtraSpot(desc.trim()); render(); }
+}
+function doR4Score() {
+  const ev = scoreR4(state.r4.currentTeamIdx);
+  if (!ev) return;
+  stopTimer(); cdSpoken.clear();
+  state.showScoresOnDisplay = true;
+  save(); render();
+  const team = state.teams.find(t => t.id === ev.teamId);
+  const total = team ? teamTotal(team) : 0;
+  speak(`${ev.teamName}，识图找茬，得${scoreToSpeech(ev.delta)}，总分${scoreToSpeech(total)}`);
+}
+// ── R5 飞花令 ────────────────────────────────────
+function r5Init() {
+  if (!state.draw.teamOrder.length) return alert('请先完成抽签');
+  initR5(); switchPanel(5); render();
+}
+function r5SetTheme(i) { r5StartTheme(i); startTimer(state.r5.timerSec*1000, 5); cdSpoken.clear(); render(); }
+function r5NextTheme() {
+  const themes = state.questions.filter(q=>q.round===5&&q.type==='theme');
+  const ni = state.r5.currentThemeIdx + 1;
+  if (ni >= themes.length) return alert('飞花令全部令题已完成！');
+  r5StartTheme(ni); startTimer(state.r5.timerSec*1000, 5); cdSpoken.clear(); render();
+}
+function r5DoValid(teamId) {
+  const ans = prompt('有效内容（可留空）：') ?? '';
+  r5ValidAnswer(teamId, ans || '（未录入）');
+  startTimer(state.r5.timerSec*1000, 5); cdSpoken.clear(); render();
+}
+function r5DoElim(teamId) { r5Eliminate(teamId); render(); }
+function r5ManualWinner() {
+  const active = state.r5.activeTeams || [];
+  if (!active.length) return alert('无活跃队伍');
+  const opts = active.map(id => { const t=state.teams.find(t=>t.id===id); return `${id}: ${t?.name||'?'}`; }).join('\n');
+  const input = prompt(`输入擂主队伍ID：\n${opts}`);
+  const tid = parseInt(input);
+  if (active.includes(tid)) { r5SetWinner(tid); render(); }
+  else alert('无效的队伍ID');
+}
+
+// ── 大屏 ─────────────────────────────────────────
+function toggleShowScoresBTN() { toggleShowScores(undefined); }
+function stopTimer() { state.timer.state = 'idle'; }
+
+// ── 分数调整 ─────────────────────────────────────
+function doAdj(teamId, rKey, delta) { adjustScore(teamId, rKey, delta); render(); }
+
+// ── 计时器按钮 ────────────────────────────────────
+function doTimerPP() {
+  if (state.timer.state === 'running') pauseTimer();
+  else if (state.timer.state === 'paused') resumeTimer();
+}
+
+// ── 历史面板 ─────────────────────────────────────
+function toggleHistPanel() {
+  const p = document.getElementById('hist-panel');
+  p.style.display = p.style.display === 'none' ? '' : 'none';
+}
+
+// ── 设置弹窗 ─────────────────────────────────────
+let _forceClicks = 0;
+function openSettings() {
+  // 队伍编辑
+  document.getElementById('team-editors').innerHTML = state.teams.map((t,i) => `
+    <div class="card" style="border-color:${tColor(t)}55;margin-bottom:8px">
+      <div class="row" style="margin-bottom:6px">
+        <div><label>队名</label><input type="text" value="${escapeAttr(t.name)}" oninput="updateTeamName(${t.id},this.value)"></div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${t.members.map((m,j)=>`<div><label>队员${j+1}</label><input type="text" value="${escapeAttr(m)}" style="width:85px" oninput="updateMember(${t.id},${j},this.value)"></div>`).join('')}
+      </div>
+    </div>`
+  ).join('');
+
+  // 键位
+  document.getElementById('keymap-editors').innerHTML = state.teams.map(t => `
+    <div class="row" style="margin-bottom:4px">
+      <span style="color:${tColor(t)};font-weight:700;min-width:50px">${escapeHtml(t.name)}</span>
+      <input type="text" value="${escapeAttr((state.keymap[t.id]||[]).join(' '))}" style="width:160px"
+             oninput="updateKeymap(${t.id},this.value)" placeholder="按键空格分隔">
+    </div>`).join('');
+
+  // TTS
+  document.getElementById('s-tts-on').checked   = !!state.tts.enabled;
+  document.getElementById('s-tts-auto').checked  = !!state.tts.autoRead;
+  document.getElementById('s-tts-cd').checked    = !!state.tts.readCountdown;
+  document.getElementById('s-tts-opts').checked  = !!state.tts.readOptions?.readOptions;
+  document.getElementById('s-tts-rate').value    = state.tts.rate || 1;
+  document.getElementById('s-tts-vol').value     = state.tts.volume ?? 1;
+  document.getElementById('s-rate-val').textContent = `×${state.tts.rate||1}`;
+  document.getElementById('s-brand').value        = state.brandName || '';
+
+  const voices = speechSynthesis.getVoices().filter(v=>v.lang.startsWith('zh'));
+  const vs = document.getElementById('s-tts-voice');
+  vs.innerHTML = '<option value="">系统默认</option>' +
+    voices.map(v=>`<option value="${escapeAttr(v.name)}"${v.name===state.tts.voiceName?' selected':''}>${escapeHtml(v.name)}</option>`).join('');
+
+  _forceClicks = 0;
+  document.getElementById('force-section').style.display = 'none';
+  document.getElementById('force-hint').textContent = '▸ 高级选项（点击三次解锁）';
+  document.getElementById('settings-overlay').classList.add('open');
+}
+function closeSettings() {
+  document.getElementById('settings-overlay').classList.remove('open');
+  render();
+}
+function updateTeamName(id, v) { const t=state.teams.find(t=>t.id===id); if(t){t.name=v;save();} }
+function updateMember(tid, j, v) { const t=state.teams.find(t=>t.id===tid); if(t){t.members[j]=v;save();} }
+function updateKeymap(tid, v) { state.keymap[tid]=v.trim().split(/\s+/).filter(Boolean); save(); }
+function saveTTS() {
+  state.tts.enabled    = document.getElementById('s-tts-on').checked;
+  state.tts.autoRead   = document.getElementById('s-tts-auto').checked;
+  state.tts.readCountdown = document.getElementById('s-tts-cd').checked;
+  state.tts.readOptions.readOptions = document.getElementById('s-tts-opts').checked;
+  state.tts.rate       = parseFloat(document.getElementById('s-tts-rate').value);
+  state.tts.volume     = parseFloat(document.getElementById('s-tts-vol').value);
+  state.tts.voiceName  = document.getElementById('s-tts-voice').value;
+  save();
+}
+function loadLogo(input) {
+  const f=input.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=e=>{setLogo(e.target.result);render();};
+  r.readAsDataURL(f);
+}
+function forceHintClick() {
+  _forceClicks++;
+  if (_forceClicks >= 3) {
+    document.getElementById('force-section').style.display = '';
+    document.getElementById('force-hint').textContent = '高级选项（已解锁）';
+  } else {
+    document.getElementById('force-hint').textContent = `▸ 高级选项（已点 ${_forceClicks}/3 次）`;
+  }
+}
+function doForceOverride() {
+  const orderStr = document.getElementById('s-force-order').value.trim();
+  const operator = document.getElementById('s-force-op').value.trim();
+  if (!orderStr||!operator) return alert('请填写新顺序和操作人姓名');
+  try {
+    forceOverrideTeamOrder(orderStr.split(/\s+/).map(Number), operator);
+    alert('强制覆盖成功');
+    closeSettings();
+  } catch(e) { alert('失败：'+e.message); }
+}
+
+speechSynthesis.onvoiceschanged = () => {
+  if (!document.getElementById('settings-overlay').classList.contains('open')) return;
+  const voices = speechSynthesis.getVoices().filter(v=>v.lang.startsWith('zh'));
+  const vs = document.getElementById('s-tts-voice');
+  vs.innerHTML = '<option value="">系统默认</option>' +
+    voices.map(v=>`<option value="${escapeAttr(v.name)}"${v.name===state.tts.voiceName?' selected':''}>${escapeHtml(v.name)}</option>`).join('');
+};
+
+// ── 共享状态监听 ─────────────────────────────────
+onChange(() => render());
+render();
+</script>
+</body>
+</html>

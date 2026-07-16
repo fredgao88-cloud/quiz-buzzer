@@ -1,0 +1,13 @@
+Total: 268
+  R1 single       : 40
+  R2 fill_multi   : 2
+  R2 multi        : 2
+  R3 fill         : 68
+  R3 judge        : 65
+  R3 multi        : 67
+  R3 single       : 16
+  R4 spot         : 5
+  R5 theme        : 3
+Errors: 0
+Fill sample: 指引顾客手势右手并拢，掌心向上，与地面呈____度。 => 45
+Judge sample: 接待顾客时，可随意用手指指向商品与方向 => ×

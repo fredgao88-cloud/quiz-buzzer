@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \":*)",
+      "Bash(python3 -c \":*)",
+      "Bash(python:*)",
+      "Bash(grep -v \"^.*//.*$\")",
+      "Bash(cd:*)"
+    ]
+  }
+}

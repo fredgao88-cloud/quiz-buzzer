@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>荣资商厦服务技能大赛 · 大屏展示</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#050d1a;--surface:#0f1f36;--surface2:#162840;--border:#1e3a5f;
+  --text:#e2e8f0;--muted:#64748b;--accent:#3b82f6;
+  --green:#22c55e;--red:#ef4444;--yellow:#f59e0b;--purple:#a855f7;
+}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Microsoft YaHei',system-ui,sans-serif}
+
+/* ── 顶栏 ── */
+#header{display:flex;align-items:center;gap:14px;padding:10px 24px;background:linear-gradient(135deg,#0a1628,#111f38);border-bottom:1px solid var(--border);height:64px;flex-shrink:0}
+#header .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px;letter-spacing:.5px}
+#header .brand img{height:44px;border-radius:6px;object-fit:contain}
+#header .spacer{flex:1}
+#round-tag{padding:5px 18px;border-radius:12px;font-size:14px;font-weight:700;background:#1e3a5f;border:1px solid var(--accent);color:#93c5fd}
+#timer-ring-wrap{position:relative;width:52px;height:52px;flex-shrink:0}
+#timer-ring-wrap svg{position:absolute;inset:0;transform:rotate(-90deg)}
+#timer-ring-wrap .ring-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--green)}
+#timer-ring-wrap .ring-text.warn{color:var(--yellow)}
+#timer-ring-wrap .ring-text.danger{color:var(--red);animation:pulse .6s ease-in-out infinite}
+
+/* ── 主区 ── */
+#main{display:flex;flex-direction:column;height:calc(100vh - 64px);overflow:hidden}
+
+/* ── 题目区 ── */
+#q-area{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:28px 40px;position:relative;overflow:hidden}
+#q-stem{font-size:clamp(20px,3vw,36px);font-weight:700;line-height:1.65;text-align:center;max-width:900px;color:var(--text)}
+#q-options{margin-top:22px;display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:860px;width:100%}
+.q-opt{padding:12px 20px;border-radius:10px;border:2px solid var(--border);background:var(--surface);font-size:18px;transition:all .3s}
+.q-opt.correct{background:#14532d55;border-color:var(--green);color:#86efac;transform:scale(1.02)}
+#q-answer-box{margin-top:18px;padding:14px 24px;border-radius:10px;background:#1e3a5f;border:2px solid var(--accent);font-size:20px;color:#93c5fd;text-align:center;max-width:860px;width:100%}
+
+/* ── 抢答横幅 ── */
+#buzz-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:10}
+#buzz-banner{padding:28px 60px;border-radius:20px;font-size:clamp(28px,4vw,52px);font-weight:900;text-align:center;letter-spacing:2px;opacity:0;transition:opacity .3s}
+#buzz-banner.show-armed{opacity:1;background:#14532d88;border:4px solid var(--green);color:var(--green);box-shadow:0 0 60px #22c55e55;animation:pulse-glow-g 1s ease-in-out infinite}
+#buzz-banner.show-locked{opacity:1;background:#1e3a5f88;border:4px solid var(--accent);color:#fff;box-shadow:0 0 60px #3b82f655;animation:slide-in .4s ease-out}
+#buzz-banner.show-violation{opacity:1;background:#7f1d1d88;border:4px solid var(--red);color:var(--red);box-shadow:0 0 60px #ef444455;animation:shake .4s ease-out}
+
+@keyframes pulse-glow-g{0%,100%{box-shadow:0 0 40px #22c55e44}50%{box-shadow:0 0 80px #22c55e99}}
+@keyframes slide-in{0%{transform:scale(.7);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-12px)}75%{transform:translateX(12px)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+/* ── 分数栏 ── */
+#scores-bar{display:none;background:linear-gradient(180deg,#0a1628,#0f1f36);border-top:1px solid var(--border);padding:14px 24px;flex-shrink:0}
+#scores-bar.visible{display:block}
+#scores-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.score-card{background:var(--surface2);border:2px solid var(--border);border-radius:12px;padding:12px 10px;text-align:center;transition:all .4s}
+.score-card.first{border-color:gold;box-shadow:0 0 20px gold44}
+.score-card .sc-name{font-weight:700;font-size:15px;margin-bottom:4px}
+.score-card .sc-total{font-size:32px;font-weight:900;font-variant-numeric:tabular-nums}
+.score-card .sc-rounds{font-size:11px;color:var(--muted);margin-top:4px}
+.score-card .sc-rank{position:absolute;top:6px;right:8px;font-size:12px;font-weight:700}
+
+/* ── 翻牌动画 ── */
+#cardflip-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(160deg,#060e1e,#0a1a32);z-index:5;gap:20px;padding:20px}
+#cardflip-area.show{display:flex}
+#cf-header{text-align:center}
+#cf-title{font-size:clamp(18px,2.5vw,30px);font-weight:800;color:var(--accent);letter-spacing:1px}
+#cf-subtitle{font-size:clamp(12px,1.4vw,18px);color:var(--muted);margin-top:6px}
+.cf-grid{display:grid;gap:clamp(8px,1vw,14px)}
+.cf-card{border-radius:12px;perspective:900px}
+.cf-card-inner{position:relative;width:100%;height:100%;transition:transform .7s cubic-bezier(.4,.2,.2,1);transform-style:preserve-3d}
+.cf-card.flipped .cf-card-inner{transform:rotateY(180deg)}
+.cf-front,.cf-back{position:absolute;inset:0;border-radius:12px;backface-visibility:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.cf-front{background:linear-gradient(150deg,#1a3356,#0d2040);border:2px solid #2a4a72;color:var(--accent)}
+.cf-front .cf-num{font-size:clamp(20px,3vw,44px);font-weight:900;line-height:1;text-shadow:0 0 20px var(--accent)44}
+.cf-front .cf-deco{font-size:clamp(10px,1.2vw,18px);color:#2a4a72;letter-spacing:2px;margin-top:2px}
+.cf-back{background:linear-gradient(135deg,#1d4ed8,#7c3aed);border:2px solid #60a5fa;color:#fff;transform:rotateY(180deg);font-size:clamp(12px,1.6vw,22px);font-weight:800;text-align:center;padding:10px;line-height:1.3}
+.cf-card.used .cf-front{background:#0a0f1a;border-color:#111827;opacity:.45}
+.cf-card.flipped .cf-back{box-shadow:0 0 30px #3b82f666,0 0 60px #3b82f622}
+
+/* ── 抽签动画 ── */
+#draw-area{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:24px;background:var(--bg);z-index:5}
+#draw-area.show{display:flex}
+.draw-slots-row{display:flex;gap:16px;align-items:center;justify-content:center}
+.draw-slot-d{width:100px;min-height:120px;border-radius:12px;border:3px solid var(--border);background:var(--surface2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:12px}
+.draw-slot-d .ds-num{font-size:12px;color:var(--muted)}
+.draw-slot-d .ds-name{font-size:20px;font-weight:800;text-align:center}
+
+/* ── 飞花令界面 ── */
+#flower-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);z-index:5;padding:32px}
+#flower-area.show{display:flex}
+#flower-theme{font-size:clamp(24px,3vw,40px);font-weight:800;color:var(--accent);margin-bottom:8px;letter-spacing:1px}
+#flower-turn{font-size:clamp(20px,2.5vw,32px);font-weight:700;padding:14px 40px;border-radius:14px;border:3px solid var(--green);color:var(--green);background:#14532d22;animation:pulse-glow-g 1.2s ease-in-out infinite}
+#flower-used{font-size:14px;color:var(--muted);max-width:800px;text-align:center;line-height:2}
+
+/* 全屏无题提示 */
+#no-q-hint{font-size:clamp(16px,2vw,26px);color:var(--muted);text-align:center;padding:40px}
+</style>
+</head>
+<body>
+<script src="shared.js"></script>
+
+<!-- header -->
+<div id="header">
+  <div class="brand">
+    <img id="logo-img" src="" style="display:none" alt="">
+    <span id="brand-text">荣资商厦服务技能大赛</span>
+  </div>
+  <div class="spacer"></div>
+  <div id="round-tag">赛前准备</div>
+  <!-- 计时圆环 -->
+  <div id="timer-ring-wrap">
+    <svg viewBox="0 0 52 52" width="52" height="52">
+      <circle cx="26" cy="26" r="23" fill="none" stroke="#1e3a5f" stroke-width="4"/>
+      <circle id="ring-arc" cx="26" cy="26" r="23" fill="none" stroke="#3b82f6"
+              stroke-width="4" stroke-linecap="round"
+              stroke-dasharray="144.51" stroke-dashoffset="0"/>
+    </svg>
+    <div class="ring-text" id="ring-text">--</div>
+  </div>
+</div>
+
+<!-- main -->
+<div id="main">
+  <!-- question area -->
+  <div id="q-area">
+    <div id="no-q-hint">等待开始...</div>
+    <div id="q-stem" style="display:none"></div>
+    <div id="q-options" style="display:none"></div>
+    <div id="q-answer-box" style="display:none"></div>
+    <!-- buzz overlay -->
+    <div id="buzz-overlay"><div id="buzz-banner"></div></div>
+  </div>
+
+  <!-- scores bar -->
+  <div id="scores-bar">
+    <div id="scores-grid"></div>
+  </div>
+</div>
+
+<!-- card flip overlay -->
+<div id="cardflip-area">
+  <div id="cf-header">
+    <div id="cf-title">翻牌选题</div>
+    <div id="cf-subtitle"></div>
+  </div>
+  <div id="cf-grid-wrap"></div>
+</div>
+
+<!-- draw overlay -->
+<div id="draw-area">
+  <div style="font-size:28px;font-weight:800;color:var(--accent)">出场顺序抽签结果</div>
+  <div id="draw-slots-row" class="draw-slots-row"></div>
+</div>
+
+<!-- flower overlay -->
+<div id="flower-area">
+  <div id="flower-theme"></div>
+  <div id="flower-turn"></div>
+  <div id="flower-used-label" style="font-size:14px;color:var(--muted);margin-top:8px">已用答案：</div>
+  <div id="flower-used"></div>
+</div>
+
+<script>
+'use strict';
+
+const COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7'];
+function tColor(team) {
+  const i = state.teams.findIndex(t => t.id === team.id);
+  return COLORS[i % 5];
+}
+function fmtMs(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(s/60), ss = s%60;
+  return m>0 ? `${m}:${String(ss).padStart(2,'0')}` : String(ss);
+}
+
+// ── 主渲染 ──────────────────────────────────────
+function render() {
+  updateHeader();
+  updateTimer();
+  updateScoresBar();
+
+  const mode = state.displayMode || 'question';
+  const inCardFlip = mode === 'cardflip' && state.cardFlip.cards?.length;
+
+  // overlay管理
+  document.getElementById('draw-area').classList.toggle('show', mode === 'draw');
+  document.getElementById('cardflip-area').classList.toggle('show', !!inCardFlip);
+  document.getElementById('flower-area').classList.toggle('show', state.currentRound === 5);
+
+  if (state.currentRound === 5) {
+    updateFlowerArea();
+  } else if (inCardFlip) {
+    updateCardFlip();
+  } else {
+    updateQuestion();
+    updateBuzzBanner();
+  }
+
+  // 分数栏
+  if (state.showScoresOnDisplay) {
+    updateScoresGrid();
+  }
+}
+
+function updateHeader() {
+  const NAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令'];
+  document.getElementById('round-tag').textContent = NAMES[state.currentRound] || '赛前准备';
+  const li = document.getElementById('logo-img');
+  if (state.logo) { li.src = state.logo; li.style.display = ''; } else li.style.display = 'none';
+  document.getElementById('brand-text').textContent = state.brandName || '荣资商厦服务技能大赛';
+}
+
+// ── 计时圆环 ─────────────────────────────────────
+const CIRCUMFERENCE = 2 * Math.PI * 23; // ≈ 144.51
+function updateTimer() {
+  const rem = getRemainingMs();
+  const ts  = state.timer.state;
+  const arc  = document.getElementById('ring-arc');
+  const txt  = document.getElementById('ring-text');
+
+  if (ts === 'idle') {
+    arc.style.stroke = '#1e3a5f';
+    arc.setAttribute('stroke-dashoffset', '0');
+    txt.textContent = '--'; txt.className = 'ring-text'; return;
+  }
+  if (ts === 'expired') {
+    arc.style.stroke = '#ef4444';
+    arc.setAttribute('stroke-dashoffset', String(CIRCUMFERENCE));
+    txt.textContent = '0'; txt.className = 'ring-text danger'; return;
+  }
+  const dur  = state.timer.durationMs || 1;
+  const pct  = rem / dur;
+  const color= pct > .4 ? '#22c55e' : pct > .2 ? '#f59e0b' : '#ef4444';
+  arc.style.stroke = color;
+  arc.setAttribute('stroke-dashoffset', String(CIRCUMFERENCE * (1 - pct)));
+  txt.textContent = fmtMs(rem);
+  txt.className = 'ring-text' + (rem<=5000?' danger':rem<=10000?' warn':'');
+}
+
+// ── 题目区 ───────────────────────────────────────
+function getActiveQIdx() {
+  const r = state.currentRound;
+  if (r === 1) return state.r1.currentQIdx;
+  if (r === 2) return state.r2.currentQIdx;
+  if (r === 3) return state.r3.currentQIdx;
+  if (r === 4) return state.r4.currentQIdx;
+  return null;
+}
+
+function updateQuestion() {
+  const qIdx = getActiveQIdx();
+  const hint  = document.getElementById('no-q-hint');
+  const stem  = document.getElementById('q-stem');
+  const opts  = document.getElementById('q-options');
+  const ansBox= document.getElementById('q-answer-box');
+
+  // 赛前准备：显示主题图
+  if (state.currentRound === 0) {
+    stem.style.display = 'none'; opts.style.display = 'none'; ansBox.style.display = 'none';
+    if (state.logo) {
+      hint.style.display = '';
+      hint.innerHTML = `<img src="${escapeAttr(state.logo)}" style="max-width:70vw;max-height:60vh;border-radius:16px;box-shadow:0 8px 40px #0008;object-fit:contain">
+        <div style="margin-top:20px;font-size:clamp(20px,3vw,36px);font-weight:800;color:var(--text)">${escapeHtml(state.brandName || '荣资商厦服务技能大赛')}</div>`;
+    } else {
+      hint.style.display = '';
+      hint.innerHTML = `<div style="font-size:clamp(24px,4vw,48px);font-weight:800;color:var(--text)">${escapeHtml(state.brandName || '荣资商厦服务技能大赛')}</div>
+        <div style="margin-top:12px;font-size:clamp(14px,1.5vw,20px);color:var(--muted)">等待开始...</div>`;
+    }
+    return;
+  }
+
+  if (qIdx == null) {
+    hint.style.display = ''; hint.textContent = '等待出题...';
+    stem.style.display = 'none';
+    opts.style.display = 'none'; ansBox.style.display = 'none'; return;
+  }
+  const q = state.questions[qIdx];
+  if (!q) { hint.textContent = '题目加载失败'; hint.style.display = ''; stem.style.display='none'; return; }
+
+  hint.style.display = 'none';
+  stem.style.display = '';
+  stem.textContent   = q.stem || '';
+
+  // 选项
+  if (q.options?.length) {
+    opts.style.display = '';
+    opts.innerHTML = q.options.map((opt,i) => {
+      const l = 'ABCDE'[i];
+      const isCorrect = state.showAnswerOnDisplay &&
+        (Array.isArray(q.answer) ? q.answer.includes(l) : q.answer === l);
+      return `<div class="q-opt${isCorrect?' correct':''}">${l}. ${escapeHtml(opt)}</div>`;
+    }).join('');
+  } else {
+    opts.style.display = 'none';
+  }
+
+  // 答案
+  if (state.showAnswerOnDisplay && q.answer) {
+    const ans = Array.isArray(q.answer) ? q.answer.join('、') : String(q.answer);
+    ansBox.style.display = '';
+    ansBox.textContent = `答案：${ans}`;
+  } else {
+    ansBox.style.display = 'none';
+  }
+}
+
+// ── 抢答横幅 ─────────────────────────────────────
+let _lastBuzzPulse = -1;
+let _buzzerHideTimer = null;
+
+function updateBuzzBanner() {
+  if (state.currentRound !== 3) {
+    hideBuzzBanner(); return;
+  }
+  const bs = state.r3.buzzState;
+  const banner = document.getElementById('buzz-banner');
+
+  if (bs === 'armed') {
+    showBuzzBanner('开始抢答！', 'show-armed');
+  } else if (bs === 'locked' || bs === 'supplement') {
+    const team = state.teams.find(t => t.id === state.r3.buzzedTeam);
+    const name = team?.name || '?';
+    // 检查 buzzPulse 变化，触发动画
+    if (state.r3.buzzPulse !== _lastBuzzPulse) {
+      _lastBuzzPulse = state.r3.buzzPulse;
+      showBuzzBanner(`${name} 抢答成功！`, 'show-locked');
+      if (_buzzerHideTimer) clearTimeout(_buzzerHideTimer);
+      _buzzerHideTimer = setTimeout(() => {
+        if (state.r3.buzzState === 'locked') {
+          banner.textContent = `${name} 请作答`;
+        }
+      }, 2000);
+    }
+  } else {
+    hideBuzzBanner();
+  }
+}
+
+function showBuzzBanner(text, cls) {
+  const b = document.getElementById('buzz-banner');
+  b.textContent = text;
+  b.className = cls;
+}
+function hideBuzzBanner() {
+  const b = document.getElementById('buzz-banner');
+  b.className = ''; b.textContent = '';
+}
+
+// ── 分数栏 ───────────────────────────────────────
+function updateScoresBar() {
+  const bar = document.getElementById('scores-bar');
+  bar.classList.toggle('visible', !!state.showScoresOnDisplay);
+}
+
+function updateScoresGrid() {
+  const ranking = getRanking();
+  document.getElementById('scores-grid').innerHTML = ranking.map((r, i) => {
+    const t = r.team;
+    const c = tColor(t);
+    return `<div class="score-card${i===0?' first':''}" style="border-color:${c}88">
+      <div class="sc-name" style="color:${c}">${escapeHtml(t.name)}</div>
+      <div class="sc-total" style="color:${c}">${r.total}</div>
+      <div class="sc-rounds">R1:${t.scores.r1||0} R2:${t.scores.r2||0} R3:${t.scores.r3||0} R4:${t.scores.r4||0} R5:${t.scores.r5||0}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── 翻牌展示 ─────────────────────────────────────
+let _lastFlipPulse = -1;
+
+// 各环节翻牌网格配置
+const CF_CFG = {
+  1: { cols:5, cw:'min(13vw,140px)', ch:'min(17vw,180px)',
+       title:'个人必答 · 翻牌选题', hint:'请选手报出 1 ~ 20 的牌号' },
+  2: { cols:2, cw:'min(22vw,220px)', ch:'min(28vw,280px)',
+       title:'团队共答 · 翻牌选题', hint:'请各队选代表报出 1 ~ 4 的牌号' },
+  4: { cols:5, cw:'min(14vw,150px)', ch:'min(18vw,190px)',
+       title:'识图找茬 · 翻牌揭题', hint:'请本队选手报出 1 ~ 5 的牌号' },
+};
+
+function updateCardFlip() {
+  const cards = state.cardFlip.cards;
+  if (!cards?.length) return;
+
+  const round = state.cardFlip.context?.round;
+  const cfg   = CF_CFG[round] || { cols:5, cw:'120px', ch:'150px', title:'翻牌选题', hint:'' };
+  const wrap  = document.getElementById('cf-grid-wrap');
+
+  // 只在 flipPulse 变化时重绘（避免每帧重渲）
+  if (state.cardFlip.flipPulse !== _lastFlipPulse) {
+    _lastFlipPulse = state.cardFlip.flipPulse;
+
+    // 更新顶部文字
+    document.getElementById('cf-title').textContent = cfg.title;
+    // 副标题：当前作答队/队员（R1/R4），或通用提示（R2）
+    let subtitle = cfg.hint;
+    if (round === 1) {
+      const tIdx  = state.r1.currentTeamIdx;
+      const mIdx  = state.r1.currentMemberIdx;
+      const tid   = state.draw.teamOrder[tIdx];
+      const team  = state.teams.find(t => t.id === tid);
+      if (team) subtitle = `当前答题：${team.name} · ${team.members[mIdx] || `队员${mIdx+1}`}`;
+    } else if (round === 4) {
+      const tIdx = state.r4.currentTeamIdx;
+      const tid  = state.draw.teamOrder[tIdx];
+      const team = state.teams.find(t => t.id === tid);
+      if (team) subtitle = `当前出题：${team.name}`;
+    }
+    document.getElementById('cf-subtitle').textContent = subtitle;
+
+    // 渲染卡牌
+    wrap.innerHTML =
+      `<div class="cf-grid" style="grid-template-columns:repeat(${cfg.cols},${cfg.cw});grid-auto-rows:${cfg.ch}">` +
+      cards.map((card, i) => {
+        const num      = card.cardNum || (i + 1);
+        const isFlipped = card.revealed || card.used;
+
+        // 牌背内容 —— 不显示题目文字，避免剧透
+        let backHtml = '';
+        if (round === 4) {
+          backHtml = escapeHtml(card.imageKey || `图${num}`);
+        } else if (round === 2) {
+          const q = card.qId != null ? state.questions.find(q => q.id === card.qId) : null;
+          const tLabel = q ? ({multi:'多选题',fill_multi:'填空题'}[q.type] || '选择题') : '题目';
+          backHtml = `<span style="font-size:.65em;opacity:.75">第 ${num} 题</span><br>${escapeHtml(tLabel)}`;
+        } else {
+          // R1：只显示✦，不透露题目
+          backHtml = `✦`;
+        }
+
+        return `<div class="cf-card${isFlipped ? ' flipped' : ''}${card.used ? ' used' : ''}">
+          <div class="cf-card-inner">
+            <div class="cf-front">
+              <div class="cf-num">${num}</div>
+              <div class="cf-deco">· · ·</div>
+            </div>
+            <div class="cf-back">${backHtml}</div>
+          </div>
+        </div>`;
+      }).join('') +
+      '</div>';
+  }
+}
+
+// ── 飞花令展示 ───────────────────────────────────
+function updateFlowerArea() {
+  const themes = state.questions.filter(q => q.round === 5 && q.type === 'theme');
+  const curTheme = themes[state.r5.currentThemeIdx];
+  document.getElementById('flower-theme').textContent = curTheme ? `令题：${curTheme.stem}` : '服务飞花令';
+
+  const tOrder = state.r5.teamOrder.length ? state.r5.teamOrder : state.teams.map(t=>t.id);
+  const active = state.r5.activeTeams || [];
+  const curId  = tOrder[state.r5.currentTurnIdx];
+  const curTeam = state.teams.find(t=>t.id===curId);
+  const turnEl  = document.getElementById('flower-turn');
+  if (curTeam && active.includes(curId)) {
+    const c = tColor(curTeam);
+    turnEl.textContent = `轮到 ${curTeam.name} 作答`;
+    turnEl.style.cssText = `font-size:clamp(20px,2.5vw,32px);font-weight:700;padding:14px 40px;border-radius:14px;border:3px solid ${c};color:${c};background:${c}22;animation:pulse-glow-g 1.2s ease-in-out infinite`;
+  } else {
+    turnEl.textContent = '';
+    turnEl.style.cssText = '';
+  }
+
+  const used = state.r5.usedAnswers || [];
+  document.getElementById('flower-used').textContent =
+    used.map((a,i)=>`${i+1}.${a.answer}`).join('  ') || '（暂无）';
+}
+
+// ── 循环更新（requestAnimationFrame） ─────────────
+function loop() {
+  updateTimer();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ── 状态变更监听 ─────────────────────────────────
+onChange(() => render());
+render();
+</script>
+</body>
+</html>
