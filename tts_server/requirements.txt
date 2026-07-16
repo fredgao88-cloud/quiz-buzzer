@@ -1,0 +1,19 @@
+# 服务框架（必装）
+fastapi>=0.110
+uvicorn>=0.27
+pydantic>=2.0
+
+# ── TTS 引擎：至少装一个 ──────────────────────────
+# 音质很好，安装极简，但需要外网（微软神经语音）
+edge-tts>=6.1
+
+# 离线兜底，音质一般（Windows SAPI，与浏览器原生同源）
+pyttsx3>=2.90
+
+# ── 可选：更高音质的离线引擎，按需手动安装 ────────
+# 离线 + 纯 CPU + 音质好，需另下 .onnx 模型并设 RZ_PIPER_MODEL
+#   pip install piper-tts
+#   模型: https://huggingface.co/rhasspy/piper-voices → zh_CN-huayan-medium
+#
+# 离线 + 音质最好，建议 GPU，首次运行自动下载约 1GB 权重
+#   pip install ChatTTS torch torchaudio numpy

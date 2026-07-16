@@ -486,7 +486,23 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
         </label>
       </div>
       <div class="row">
-        <div><label>声音</label><select id="s-tts-voice" style="width:200px" onchange="saveTTS()"><option value="">系统默认</option></select></div>
+        <div><label>引擎</label>
+          <select id="s-tts-engine" style="width:150px" onchange="saveTTS();refreshTTSStatus()">
+            <option value="auto">自动（优先本地服务）</option>
+            <option value="server">仅本地服务</option>
+            <option value="native">仅浏览器原生</option>
+          </select>
+        </div>
+        <div><label>服务地址</label><input type="text" id="s-tts-url" style="width:180px" onchange="saveTTS();refreshTTSStatus()" placeholder="http://127.0.0.1:5231"></div>
+        <div><label>服务音色</label><select id="s-tts-svoice" style="width:200px" onchange="saveTTS()"><option value="">服务端默认</option></select></div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <div style="flex:1"><label>服务状态</label><div id="s-tts-status" style="font-size:12px;color:var(--muted)">未检测</div></div>
+        <button class="btn-ghost btn-sm" onclick="refreshTTSStatus()">重新检测</button>
+        <button class="btn-ghost btn-sm" onclick="doPrewarm(this)">赛前预热</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <div><label>原生音色</label><select id="s-tts-voice" style="width:200px" onchange="saveTTS()"><option value="">系统默认</option></select></div>
         <div><label>语速 <span id="s-rate-val"></span></label><input type="range" id="s-tts-rate" min="0.5" max="2" step="0.1" style="width:100px" oninput="document.getElementById('s-rate-val').textContent='×'+this.value" onchange="saveTTS()"></div>
         <div><label>音量</label><input type="range" id="s-tts-vol" min="0" max="1" step="0.1" style="width:80px" onchange="saveTTS()"></div>
         <button class="btn-ghost btn-sm" onclick="speak('荣资商厦服务技能大赛，语音测试一二三四五')">测试</button>
@@ -1501,6 +1517,9 @@ function openSettings() {
   document.getElementById('s-tts-vol').value     = state.tts.volume ?? 1;
   document.getElementById('s-rate-val').textContent = `×${state.tts.rate||1}`;
   document.getElementById('s-brand').value        = state.brandName || '';
+  document.getElementById('s-tts-engine').value  = state.tts.engine || 'auto';
+  document.getElementById('s-tts-url').value     = state.tts.serverUrl || '';
+  refreshTTSStatus();
 
   const voices = speechSynthesis.getVoices().filter(v=>v.lang.startsWith('zh'));
   const vs = document.getElementById('s-tts-voice');
@@ -1527,7 +1546,58 @@ function saveTTS() {
   state.tts.rate       = parseFloat(document.getElementById('s-tts-rate').value);
   state.tts.volume     = parseFloat(document.getElementById('s-tts-vol').value);
   state.tts.voiceName  = document.getElementById('s-tts-voice').value;
+  state.tts.engine     = document.getElementById('s-tts-engine').value;
+  state.tts.serverUrl  = document.getElementById('s-tts-url').value.trim().replace(/\/$/, '');
+  state.tts.serverVoice = document.getElementById('s-tts-svoice').value;
   save();
+}
+
+/** 检测本地 TTS 服务并刷新设置面板里的状态显示 */
+async function refreshTTSStatus() {
+  const el = document.getElementById('s-tts-status');
+  if (!el) return;
+  if (state.tts.engine === 'native') {
+    el.innerHTML = '<span style="color:var(--muted)">已选择仅原生，未检测本地服务</span>';
+    renderTTSBadge(); return;
+  }
+  el.textContent = '检测中…';
+  const info = await ttsCheckServer();
+  if (info.ok) {
+    el.innerHTML = `<span style="color:var(--green)">● 已连接</span> 引擎 <b>${escapeHtml(info.engine)}</b>
+      · 已缓存 ${info.cache_count} 条`;
+    const sv = document.getElementById('s-tts-svoice');
+    const cur = state.tts.serverVoice || '';
+    sv.innerHTML = '<option value="">服务端默认</option>' +
+      (info.voices||[]).map(v =>
+        `<option value="${escapeAttr(v)}"${v===cur?' selected':''}>${escapeHtml(v)}</option>`).join('');
+  } else {
+    const fallback = state.tts.engine === 'server'
+      ? '<span style="color:var(--red)">强制本地服务模式下将无声，请改回"自动"或启动服务</span>'
+      : '将使用浏览器原生语音';
+    el.innerHTML = `<span style="color:var(--red)">● 未连接</span> ${fallback}
+      <br><span style="font-size:11px">启动方式：<code>cd tts_server &amp;&amp; python server.py</code></span>`;
+  }
+  renderTTSBadge();
+}
+
+async function doPrewarm(btn) {
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '预热中…';
+  const r = await ttsPrewarm();
+  btn.disabled = false; btn.textContent = old;
+  if (r.error) alert('预热失败：' + r.error);
+  else alert(`预热完成：成功 ${r.ok} 条，失败 ${r.failed?.length||0} 条\n缓存总数 ${r.cache_count}`);
+  refreshTTSStatus();
+}
+
+/** 顶栏 TTS 指示灯的悬停提示：显示当前实际走哪条链路 */
+function renderTTSBadge() {
+  const dot = document.getElementById('tts-dot');
+  if (!dot) return;
+  const st = ttsServerStatus();
+  dot.parentElement.title = st.using === 'server'
+    ? `本地 TTS 服务（${st.info?.engine || '?'}）`
+    : '浏览器原生语音';
 }
 function loadLogo(input) {
   const f=input.files[0]; if(!f) return;
@@ -1566,6 +1636,18 @@ speechSynthesis.onvoiceschanged = () => {
 // ── 共享状态监听 ─────────────────────────────────
 onChange(() => render());
 render();
+
+// ── 本地 TTS 服务探测 ────────────────────────────
+// 启动即探一次；之后每 30 秒复查，服务中途启停都能自动跟上。
+// 探测失败不影响使用，speak() 会自动回退浏览器原生语音。
+ttsCheckServer().then(info => {
+  if (info.ok) console.info(`[rz] 本地 TTS 服务已连接，引擎 ${info.engine}`);
+  else console.info('[rz] 未检测到本地 TTS 服务，使用浏览器原生语音');
+  renderTTSBadge();
+});
+setInterval(() => {
+  if ((state.tts.engine || 'auto') !== 'native') ttsCheckServer().then(renderTTSBadge);
+}, 30000);
 </script>
 </body>
 </html>

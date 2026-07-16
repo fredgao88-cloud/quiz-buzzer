@@ -155,8 +155,12 @@ function defaultState() {
     // ── TTS 配置 ────────────────────────────────
     tts: {
       enabled:        true,
+      // 引擎：auto=本地服务可用则用，否则回退原生；native=强制浏览器原生；server=强制本地服务
+      engine:         'auto',
+      serverUrl:      'http://127.0.0.1:5231',
+      serverVoice:    '',        // 空=用服务端默认音色
       lang:           'zh-CN',
-      voiceName:      '',        // 空=系统默认
+      voiceName:      '',        // 空=系统默认（仅原生引擎）
       rate:           1.0,
       pitch:          1.0,
       volume:         1.0,
@@ -291,12 +295,34 @@ window.addEventListener('storage', e => {
 
 // =====================================================
 // TTS 模块 (仅在控制台页面运行)
+//
+// 两条链路：
+//   server —— POST {serverUrl}/api/speak 取音频，用 <audio> 播放（音质好）
+//   native —— 浏览器 speechSynthesis（无服务时的兜底，比赛不会因此中断）
+//
+// engine='auto' 时按健康检查结果自动选择；服务中途挂掉会即时回退到 native。
+// 所有异步结果都用 _speakSeq 做打断隔离：过期的音频不会覆盖新播报。
 // =====================================================
 let _ttsQueue = [];
 let _ttsBusy  = false;
+let _speakSeq = 0;          // 每次新播报自增；异步回来发现对不上就丢弃
+let _audioEl  = null;       // 当前服务端音频
+let _serverOk = false;      // 健康检查结果
+let _serverInfo = null;     // {engine, mime, voices}
+const _fetchCtls  = new Set();  // 进行中的 fetch 控制器，打断时全部 abort
+const _audioCache = new Map();  // cacheKey → objectURL（倒计时数字等复用）
+const _inflight   = new Map();  // cacheKey → Promise，同文本并发只发一次请求
 
 function isTTSAvailable() {
-  return window.IS_CONTROL && state.tts.enabled && 'speechSynthesis' in window;
+  return !!window.IS_CONTROL && state.tts.enabled &&
+         (_useServer() || 'speechSynthesis' in window);
+}
+
+function _useServer() {
+  const mode = state.tts.engine || 'auto';
+  if (mode === 'native') return false;
+  if (mode === 'server') return true;
+  return _serverOk;
 }
 
 function getVoice() {
@@ -304,12 +330,113 @@ function getVoice() {
   return speechSynthesis.getVoices().find(v => v.name === state.tts.voiceName) || null;
 }
 
-/** 播放单条文本（立即打断当前播放） */
-function speak(text, opts = {}) {
-  if (!isTTSAvailable()) { opts.onend?.(); return; }
-  speechSynthesis.cancel();
+/** 探测本地 TTS 服务；返回 {ok, engine, voices}。engine='native' 时跳过 */
+async function ttsCheckServer() {
+  if ((state.tts.engine || 'auto') === 'native') { _serverOk = false; return { ok:false }; }
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 2500);
+    const res = await fetch(`${state.tts.serverUrl}/api/health`, { signal: ctl.signal });
+    clearTimeout(t);
+    const info = await res.json();
+    _serverOk   = !!info.ok;
+    _serverInfo = info;
+    return info;
+  } catch (e) {
+    _serverOk = false; _serverInfo = null;
+    return { ok:false, error: String(e) };
+  }
+}
+
+function ttsServerStatus() {
+  return { ok: _serverOk, info: _serverInfo, using: _useServer() ? 'server' : 'native' };
+}
+
+/** 赛前预热：把固定话术 + 各队名播报提前合成好，消除首句 2 秒延迟 */
+async function ttsPrewarm() {
+  if (!_serverOk) return { ok:0, error:'本地 TTS 服务未连接' };
+  const texts = [
+    '开始抢答', '时间到', '时间到，作答超时', '时间到，无人抢答',
+    '时间到，请各队举板', '时间到，本队找茬结束', '开放补抢',
+    ...Array.from({length:10}, (_,i) => String(i+1)),
+  ];
+  for (const t of state.teams) {
+    texts.push(`${t.name}抢答成功，请答题`, `${t.name}，抢答违规，扣两分`, `${t.name}出局`);
+  }
+  try {
+    const res = await fetch(`${state.tts.serverUrl}/api/prewarm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texts, voice: state.tts.serverVoice || '', rate: state.tts.rate }),
+    });
+    return await res.json();
+  } catch (e) {
+    return { ok:0, error: String(e) };
+  }
+}
+
+/** 打断一切正在进行的播报 */
+function _cancelAll() {
+  _speakSeq++;
   _ttsQueue = [];
   _ttsBusy  = false;
+  for (const c of _fetchCtls) { try { c.abort(); } catch(e) {} }
+  _fetchCtls.clear();
+  if (_audioEl) { try { _audioEl.pause(); } catch(e) {} _audioEl = null; }
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+}
+
+function _cacheKey(text) {
+  return `${text}|${state.tts.serverVoice || ''}|${state.tts.rate}`;
+}
+
+/**
+ * 向服务取音频，返回 objectURL；失败抛异常。
+ * 三层去重：已缓存直接返回 → 同文本正在请求则复用该 Promise → 否则发新请求。
+ */
+function _fetchAudio(text) {
+  const key = _cacheKey(text);
+  if (_audioCache.has(key)) return Promise.resolve(_audioCache.get(key));
+  if (_inflight.has(key))   return _inflight.get(key);
+
+  const ctl = new AbortController();
+  _fetchCtls.add(ctl);
+  const p = (async () => {
+    try {
+      const res = await fetch(`${state.tts.serverUrl}/api/speak`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ text, voice: state.tts.serverVoice || '', rate: state.tts.rate }),
+        signal:  ctl.signal,
+      });
+      if (!res.ok) throw new Error(`TTS 服务返回 ${res.status}`);
+      const url = URL.createObjectURL(await res.blob());
+      _audioCache.set(key, url);
+      return url;
+    } finally {
+      _inflight.delete(key);
+      _fetchCtls.delete(ctl);
+    }
+  })();
+  _inflight.set(key, p);
+  return p;
+}
+
+/**
+ * 并行预取多段音频。
+ * 串行等合成会让读题前出现十几秒死寂（每段约 2.5 秒），
+ * 这里一次性把所有段发出去，总等待收敛为最慢的那一段。
+ */
+function _prefetchAll(segments) {
+  if (!_useServer()) return;
+  for (const t of segments) {
+    if (t) _fetchAudio(t).catch(() => {});   // 失败留给播放时回退处理
+  }
+}
+
+/** 原生 Web Speech 播一段 */
+function _nativeSpeak(text, onend, seq, opts = {}) {
+  if (!('speechSynthesis' in window)) { onend?.(); return; }
   const utt = new SpeechSynthesisUtterance(text);
   utt.lang   = state.tts.lang;
   utt.rate   = opts.rate   ?? state.tts.rate;
@@ -317,42 +444,68 @@ function speak(text, opts = {}) {
   utt.volume = opts.volume ?? state.tts.volume;
   const voice = getVoice();
   if (voice) utt.voice = voice;
-  if (opts.onend) utt.onend = opts.onend;
+  utt.onend = () => { if (seq === _speakSeq) onend?.(); };
   speechSynthesis.speak(utt);
   // Chrome 长时间空置后可能停在 paused 静默状态，resume 兜底（见 12.11）
   try { speechSynthesis.resume(); } catch(e) {}
 }
 
+/** 服务端播一段；任何失败都回退原生，保证现场不哑火 */
+async function _serverSpeak(text, onend, seq, opts = {}) {
+  try {
+    const url = await _fetchAudio(text);
+    if (seq !== _speakSeq) return;              // 已被新播报打断，丢弃
+    const a = new Audio(url);
+    a.volume = opts.volume ?? state.tts.volume ?? 1;
+    _audioEl = a;
+    a.onended = () => { if (seq === _speakSeq) onend?.(); };
+    a.onerror = () => {
+      if (seq !== _speakSeq) return;
+      _nativeSpeak(text, onend, seq, opts);     // 音频损坏 → 原生兜底
+    };
+    await a.play();
+  } catch (e) {
+    if (e?.name === 'AbortError' || seq !== _speakSeq) return;  // 正常打断，不算失败
+    console.warn('[rz] 本地 TTS 失败，回退原生语音:', e.message);
+    _serverOk = false;                          // 标记掉线，后续直接走原生
+    _nativeSpeak(text, onend, seq, opts);
+  }
+}
+
+/** 播一段（不打断，内部用） */
+function _speakOne(text, onend, seq, opts) {
+  if (_useServer()) _serverSpeak(text, onend, seq, opts);
+  else              _nativeSpeak(text, onend, seq, opts);
+}
+
+/** 播放单条文本（立即打断当前播放） */
+function speak(text, opts = {}) {
+  if (!isTTSAvailable()) { opts.onend?.(); return; }
+  _cancelAll();
+  const seq = _speakSeq;
+  _speakOne(text, opts.onend, seq, opts);
+}
+
 /** 顺序播放多段文本；全部播完后调用 onAllDone */
 function speakQueue(segments, onAllDone) {
   if (!isTTSAvailable()) { onAllDone?.(); return; }
-  speechSynthesis.cancel();
+  _cancelAll();
   _ttsQueue = [...segments];
-  _ttsBusy  = false;
-  _drainQueue(onAllDone);
+  _prefetchAll(_ttsQueue);          // 先并行发起全部合成，再顺序播放
+  _drainQueue(onAllDone, _speakSeq);
 }
 
-function _drainQueue(onAllDone) {
+function _drainQueue(onAllDone, seq) {
+  if (seq !== _speakSeq) return;                       // 整个队列已被打断
   if (!_ttsQueue.length) { _ttsBusy = false; onAllDone?.(); return; }
   _ttsBusy = true;
   const text = _ttsQueue.shift();
-  if (!text) { _drainQueue(onAllDone); return; }
-  const utt = new SpeechSynthesisUtterance(text);
-  utt.lang   = state.tts.lang;
-  utt.rate   = state.tts.rate;
-  utt.pitch  = state.tts.pitch;
-  utt.volume = state.tts.volume;
-  const voice = getVoice();
-  if (voice) utt.voice = voice;
-  utt.onend = () => _drainQueue(onAllDone);
-  speechSynthesis.speak(utt);
-  try { speechSynthesis.resume(); } catch(e) {}
+  if (!text) { _drainQueue(onAllDone, seq); return; }
+  _speakOne(text, () => _drainQueue(onAllDone, seq), seq);
 }
 
 function stopSpeak() {
-  _ttsQueue = [];
-  _ttsBusy  = false;
-  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  _cancelAll();
 }
 
 /** 数字转中文语音（含小数） */
