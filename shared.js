@@ -541,7 +541,7 @@ function initCardDeck(round) {
   let cards = [];
   if (round === 1) {
     const pool = state.questions.filter(q => q.round === 1);
-    const shuffled = fisherYates(pool).slice(0, 20);
+    const shuffled = fisherYates(pool).slice(0, 40);
     cards = shuffled.map((q, i) => ({
       id:       `r1_${i}`,
       cardNum:  i + 1,
