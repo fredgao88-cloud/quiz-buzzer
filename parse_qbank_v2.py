@@ -142,6 +142,99 @@ def parse_judge(sec: str):
 
 
 # ── 主流程 ──────────────────────────────────────────
+def build_questions(single, multi, judge, old_path: Path):
+    """
+    与现有 questions.json 合并，产出完整题库。
+
+    新题库覆盖：单选 / 多选 / 判断
+    沿用旧题库：填空(fill) / 多填(fill_multi) —— 新档存在解析歧义，等干净源文件
+                找茬(spot) / 令题(theme)     —— 新档完全没有这两类
+
+    环节映射沿用既有方案（见开发文档 4.x）：
+      R1 = 前 40 道单选           （4人×2题×5队 = 40）
+      R2 = 2 道多选 + 2 道多填     （单题 5 分 × 4 题）
+      R3 = 其余单选 + 其余多选 + 全部填空 + 全部判断
+      R4 = 5 张找茬图  R5 = 3 道令题
+    """
+    old = json.loads(old_path.read_text(encoding="utf-8"))["questions"]
+    pick = lambda r, t: [q for q in old if q["round"] == r and q["type"] == t]
+
+    old_fill       = pick(3, "fill")
+    old_fill_multi = pick(2, "fill_multi")
+    old_spot       = pick(4, "spot")
+    old_theme      = pick(5, "theme")
+    if not (old_spot and old_theme):
+        sys.exit("旧题库里找不到 R4 spot 或 R5 theme，中止（不能产出缺环节的题库）")
+
+    out = []
+    # ── R1：前 40 道单选 ──
+    for i, q in enumerate(single[:40], 1):
+        out.append({"id": f"r1_{i:03d}", "round": 1, "type": "single",
+                    "stem": q["stem"], "options": q["options"], "answer": q["answer"],
+                    "score_correct": 2.5})
+    # ── R2：2 多选 + 2 多填 ──
+    for i, q in enumerate(multi[:2], 1):
+        out.append({"id": f"r2_mc_{i:03d}", "round": 2, "type": "multi",
+                    "stem": q["stem"], "options": q["options"], "answer": q["answer"],
+                    "score_correct": 5})
+    for i, q in enumerate(old_fill_multi[:2], 1):
+        q = dict(q); q["id"] = f"r2_mf_{i:03d}"
+        out.append(q)
+    # ── R3：其余全部 ──
+    for i, q in enumerate(single[40:], 1):
+        out.append({"id": f"r3_sc_{i:03d}", "round": 3, "type": "single",
+                    "stem": q["stem"], "options": q["options"], "answer": q["answer"],
+                    "score_correct": 2, "score_wrong": -2})
+    for i, q in enumerate(multi[2:], 1):
+        out.append({"id": f"r3_mc_{i:03d}", "round": 3, "type": "multi",
+                    "stem": q["stem"], "options": q["options"], "answer": q["answer"],
+                    "score_correct": 2, "score_wrong": -2})
+    for i, q in enumerate(old_fill, 1):
+        q = dict(q); q["id"] = f"r3_f_{i:03d}"
+        out.append(q)
+    for i, q in enumerate(judge, 1):
+        out.append({"id": f"r3_tf_{i:03d}", "round": 3, "type": "judge",
+                    "stem": q["stem"], "answer": q["answer"],
+                    "score_correct": 2, "score_wrong": -2})
+    # ── R4 / R5：原样保留 ──
+    out.extend(dict(q) for q in old_spot)
+    out.extend(dict(q) for q in old_theme)
+    return out
+
+
+def validate(qs):
+    """产出前的硬校验，任何一条不过就中止。"""
+    errs = []
+    ids = [q["id"] for q in qs]
+    dup = {i for i in ids if ids.count(i) > 1}
+    if dup:
+        errs.append(f"id 重复: {sorted(dup)[:6]}")
+    for q in qs:
+        if not q.get("stem"):
+            errs.append(f'{q["id"]} 题干为空')
+        if q["type"] in ("single", "multi"):
+            opts = q.get("options") or []
+            if len(opts) < 2:
+                errs.append(f'{q["id"]} 选项不足')
+            valid = set("ABCDE"[: len(opts)])
+            ans = q["answer"] if isinstance(q["answer"], list) else [q["answer"]]
+            if not set(ans) <= valid:
+                errs.append(f'{q["id"]} 答案 {ans} 超出 {len(opts)} 个选项')
+        if q["type"] == "judge" and q["answer"] not in ("√", "×"):
+            errs.append(f'{q["id"]} 判断答案异常: {q["answer"]!r}')
+        if q["type"] == "spot" and not q.get("spots"):
+            errs.append(f'{q["id"]} 找茬点为空')
+        if q["type"] == "theme" and not q.get("answerPool"):
+            errs.append(f'{q["id"]} 令题答案池为空')
+    # 赛制要求
+    n = lambda r: sum(1 for q in qs if q["round"] == r)
+    if n(1) != 40: errs.append(f"R1 应为 40 道，实为 {n(1)}")
+    if n(2) != 4:  errs.append(f"R2 应为 4 道，实为 {n(2)}")
+    if n(4) != 5:  errs.append(f"R4 应为 5 张图，实为 {n(4)}")
+    if n(5) < 3:   errs.append(f"R5 令题不足 3 道，实为 {n(5)}")
+    return errs
+
+
 def main():
     if not RAW.exists():
         sys.exit(f"缺少 {RAW.name}，请先从 docx 导出")
@@ -183,8 +276,44 @@ def main():
         {"single": single, "multi": multi, "judge": judge},
         ensure_ascii=False, indent=1), encoding="utf-8")
     print()
-    print(f"已写 {OUT.name}（中间产物，未并入 questions.json）")
-    return len(errs)
+    print(f"已写 {OUT.name}（中间产物）")
+
+    if "--merge" not in sys.argv:
+        print("（加 --merge 可合并 R4/R5 与旧填空题，产出 questions.json）")
+        return len(errs)
+
+    if errs:
+        sys.exit("\n解析有错误，拒绝合并。")
+
+    qpath = HERE / "questions.json"
+    qs = build_questions(single, multi, judge, qpath)
+    verrs = validate(qs)
+    print()
+    print("=" * 68)
+    print("合并结果")
+    print("=" * 68)
+    import collections
+    c = collections.Counter((q["round"], q["type"]) for q in qs)
+    for k in sorted(c):
+        print(f"  round {k[0]}  {k[1]:<11} {c[k]:>3}")
+    print(f"  {'合计':<20} {len(qs):>3}")
+    print()
+    if verrs:
+        print("校验失败:")
+        for e in verrs:
+            print("   !!", e)
+        sys.exit("\n拒绝写出 questions.json。")
+    print("校验通过：0 错误")
+
+    # 备份后写出
+    bak = HERE / "questions.backup.json"
+    if qpath.exists() and not bak.exists():
+        bak.write_text(qpath.read_text(encoding="utf-8"), encoding="utf-8")
+        print(f"已备份原题库 → {bak.name}")
+    qpath.write_text(json.dumps({"questions": qs}, ensure_ascii=False, indent=1),
+                     encoding="utf-8")
+    print(f"已写 {qpath.name}（{len(qs)} 道）")
+    return 0
 
 
 if __name__ == "__main__":

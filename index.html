@@ -1903,6 +1903,28 @@ speechSynthesis.onvoiceschanged = () => {
 onChange(() => render());
 render();
 
+// ── 题库自动加载 ─────────────────────────────────
+// 题库为空时自动拉取同目录的 questions.json，省去每次手动导入。
+// 只在【空】时加载：已导入过（含手动导入、赛中存档）则不覆盖。
+// file:// 下 fetch 会被 CORS 拦截 —— 属正常，回退到手动导入即可（顶栏有告警）。
+(function autoLoadQuestions() {
+  if (state.questions && state.questions.length) return;      // 已有题库，不动
+  fetch('questions.json')
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => {
+      if (state.questions.length) return;                     // 期间被手动导入了
+      if (loadQuestions(data)) {
+        console.info(`[rz] 已自动加载题库 ${state.questions.length} 道`);
+        render();
+      }
+    })
+    .catch(e => {
+      // file:// 直接双击时的预期失败：浏览器禁止 fetch 本地文件
+      console.info('[rz] 题库自动加载未成功（' + e.message
+        + '）。若用 file:// 双击打开，请改用启动脚本，或手动导入题库。');
+    });
+})();
+
 // ── 本地 TTS 服务探测 ────────────────────────────
 // 启动即探一次；之后每 30 秒复查，服务中途启停都能自动跟上。
 // 探测失败不影响使用，speak() 会自动回退浏览器原生语音。
