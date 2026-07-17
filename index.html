@@ -576,14 +576,32 @@ function switchPanel(n) {
     state.showScoresOnDisplay = false;
     save();
   } else if (n >= 1 && n <= 5) {
-    // 切换标签时同步 display：如已有对应环节的牌组则显示翻牌，否则显示题目
+    // 切换标签时同步 display
     state.currentRound = n;
     state.showAnswerOnDisplay = false;
     state.showScoresOnDisplay = false;
-    if (state.cardFlip.rounds[n] && state.cardFlip.context?.round === n && state.cardFlip.cards?.length) {
+
+    const usesFlip   = !!state.cardFlip.rounds[n];
+    const deckForN   = state.cardFlip.context?.round === n && state.cardFlip.cards?.length > 0;
+    // ⚠️ state.cardFlip 只存【一副】牌（cards + context.round）。
+    // 生成新牌组会覆盖旧的，连同已翻/已用记录一起抹掉 → 会导致重复出题。
+    // 所以只有在「全场还没有任何牌组」时才敢自动生成。
+    const anyDeck    = state.cardFlip.cards?.length > 0;
+
+    if (usesFlip && deckForN) {
+      // 本环节的牌组已在：直接回到翻牌，保留已翻/已用状态
       state.displayMode = 'cardflip';
       state.cardFlip.flipPulse++;
+    } else if (usesFlip && !anyDeck && initCardDeck(n)) {
+      // 首次进入翻牌环节且场上无牌组：顺手生成，避免卡在
+      // 「currentRound 已是本环节、却没有牌」的半启动状态（大屏只显示"等待出题"）。
+      // initCardDeck() 内部已设 displayMode='cardflip' 并 save()。
     } else {
+      // 其余情况一律回题目视图，不擅自重建牌组：
+      //   · R3 本就不翻牌
+      //   · R5 由 currentRound===5 触发飞花令视图
+      //   · 场上已有别的环节的牌组 → 需主持人明确点 [开始本环节] 才换
+      //   · 牌组生成失败（题库缺题 / 该环节关了翻牌）
       state.displayMode = 'question';
     }
     save();
@@ -591,6 +609,35 @@ function switchPanel(n) {
   document.querySelectorAll('.rtab').forEach(t => t.classList.toggle('active', +t.dataset.r === n));
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === `panel-${n}`));
   render();
+}
+
+/**
+ * 翻牌环节但场上没有本环节的牌组时，在面板顶部给出明确提示。
+ * 这种情况只可能是「场上已有别的环节的牌组」——switchPanel 不敢自动重建，
+ * 否则会抹掉那一副的已翻/已用记录导致重复出题（cardFlip 只存一副牌）。
+ * 不提示的话主持人只会看到大屏"等待出题"，无从判断。
+ */
+function renderDeckHint(n) {
+  document.querySelectorAll('.deck-hint').forEach(e => e.remove());
+  if (!(n >= 1 && n <= 5)) return;
+  if (!state.cardFlip.rounds[n]) return;                       // 本环节本就不翻牌
+  if (state.cardFlip.context?.round === n && state.cardFlip.cards?.length) return;  // 牌组已在
+  if (!state.questions.length) return;                          // 顶栏已有题库告警，不重复喊
+
+  const panel = document.getElementById(`panel-${n}`);
+  const card  = panel?.querySelector('.card');
+  if (!card) return;
+  const cur = state.cardFlip.context?.round;
+  const NAMES = ['','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令'];
+  const div = document.createElement('div');
+  div.className = 'deck-hint';
+  div.style.cssText = 'margin-bottom:10px;padding:10px 12px;border-radius:8px;'
+    + 'background:#78350f33;border:1px solid var(--yellow);color:#fcd34d;font-size:13px;line-height:1.7';
+  div.innerHTML = `<b>本环节尚未生成牌组，大屏不会显示翻牌。</b><br>`
+    + (cur ? `当前场上是「${escapeHtml(NAMES[cur]||('环节'+cur))}」的牌组。` : '')
+    + `点下方 <b>[开始本环节]</b> 生成本环节牌组`
+    + (cur ? `（会替换掉上述牌组）。` : `。`);
+  card.insertBefore(div, card.firstChild);
 }
 
 // ── 主渲染 ──────────────────────────────────────
@@ -605,6 +652,9 @@ function render() {
   if (curPanel === 3) renderP3();
   if (curPanel === 4) renderP4();
   if (curPanel === 5) renderP5();
+  // 放在 render() 而非 switchPanel()：r2Init() 是先 switchPanel 再 initCardDeck，
+  // 挂在 switchPanel 上会在牌组建好【之前】就算出提示，之后再也不刷新
+  renderDeckHint(curPanel);
 }
 
 function renderTopbar() {
