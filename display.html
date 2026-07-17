@@ -397,6 +397,7 @@ function updateScoresGrid() {
 
 // ── 翻牌展示 ─────────────────────────────────────
 let _lastFlipPulse = -1;
+let _lastDeckSig   = '';   // 牌组标识，换环节/重置牌组时用它判断要不要整体重绘
 
 // 各环节翻牌网格配置
 const CF_CFG = {
@@ -416,27 +417,35 @@ function updateCardFlip() {
   const cfg   = CF_CFG[round] || { cols:5, cw:'120px', ch:'150px', title:'翻牌选题', hint:'' };
   const wrap  = document.getElementById('cf-grid-wrap');
 
-  // 只在 flipPulse 变化时重绘（避免每帧重渲）
-  if (state.cardFlip.flipPulse !== _lastFlipPulse) {
-    _lastFlipPulse = state.cardFlip.flipPulse;
+  // 标题与副标题每次都刷。它们不含动画，重设无代价；
+  // 而且切换答题队员（r1SetMem）不会动 flipPulse，放进下面的门里就永远不更新。
+  document.getElementById('cf-title').textContent = cfg.title;
+  let subtitle = cfg.hint;
+  if (round === 1) {
+    const tIdx  = state.r1.currentTeamIdx;
+    const mIdx  = state.r1.currentMemberIdx;
+    const tid   = state.draw.teamOrder[tIdx];
+    const team  = state.teams.find(t => t.id === tid);
+    if (team) subtitle = `当前答题：${team.name} · ${team.members[mIdx] || `队员${mIdx+1}`}`;
+  } else if (round === 4) {
+    const tIdx = state.r4.currentTeamIdx;
+    const tid  = state.draw.teamOrder[tIdx];
+    const team = state.teams.find(t => t.id === tid);
+    if (team) subtitle = `当前出题：${team.name}`;
+  }
+  document.getElementById('cf-subtitle').textContent = subtitle;
 
-    // 更新顶部文字
-    document.getElementById('cf-title').textContent = cfg.title;
-    // 副标题：当前作答队/队员（R1/R4），或通用提示（R2）
-    let subtitle = cfg.hint;
-    if (round === 1) {
-      const tIdx  = state.r1.currentTeamIdx;
-      const mIdx  = state.r1.currentMemberIdx;
-      const tid   = state.draw.teamOrder[tIdx];
-      const team  = state.teams.find(t => t.id === tid);
-      if (team) subtitle = `当前答题：${team.name} · ${team.members[mIdx] || `队员${mIdx+1}`}`;
-    } else if (round === 4) {
-      const tIdx = state.r4.currentTeamIdx;
-      const tid  = state.draw.teamOrder[tIdx];
-      const team = state.teams.find(t => t.id === tid);
-      if (team) subtitle = `当前出题：${team.name}`;
-    }
-    document.getElementById('cf-subtitle').textContent = subtitle;
+  // 牌组标识 = 环节 + 牌 id 序列。换环节或重置牌组时它必变。
+  //
+  // ⚠️ 不能只看 flipPulse：initCardDeck() 每次都把它【重置为 0】，
+  // 于是连续两个环节的 flipPulse 都是 0，`0 !== 0` 为假 → 整段重绘被跳过 →
+  // 大屏一直停在上一个环节的牌（如 R1 的 40 张牌出现在 R4）。
+  const sig = round + '|' + cards.map(c => c.id).join(',');
+
+  // 牌组换了要整体重绘；牌组没换但有人翻牌（flipPulse++）也要重绘以更新牌面
+  if (sig !== _lastDeckSig || state.cardFlip.flipPulse !== _lastFlipPulse) {
+    _lastDeckSig   = sig;
+    _lastFlipPulse = state.cardFlip.flipPulse;
 
     // 渲染卡牌
     wrap.innerHTML =
