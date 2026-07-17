@@ -162,6 +162,9 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     <span id="brand-text">荣资商厦服务技能大赛</span>
   </div>
   <div class="spacer"></div>
+  <!-- 题库未导入时常驻告警：P0 的红字在切到其他面板后就看不见了 -->
+  <button id="no-qbank-warn" class="badge badge-red" style="display:none;cursor:pointer;border:0;font:inherit"
+          onclick="switchPanel(0)" title="点击前往赛前准备面板导入题库">⚠ 尚未导入题库</button>
   <span id="round-badge" class="badge badge-blue">赛前准备</span>
   <button class="btn-ghost btn-sm" onclick="toggleShowScoresBTN()">大屏分数</button>
   <button class="btn-ghost btn-sm" onclick="openSettings()">设置</button>
@@ -613,6 +616,8 @@ function renderTopbar() {
   const li = document.getElementById('logo-img');
   if (state.logo) { li.src = state.logo; li.style.display = ''; } else li.style.display = 'none';
   document.getElementById('brand-text').textContent = state.brandName || '荣资商厦服务技能大赛';
+  // 题库告警常驻可见，直到导入为止
+  document.getElementById('no-qbank-warn').style.display = state.questions.length ? 'none' : '';
 }
 
 let _lastTimerStart = null;
@@ -1227,12 +1232,46 @@ function loadQFile(input) {
   input.value = '';
 }
 
+// ── 环节启动的前置检查 ────────────────────────────
+/**
+ * 进入环节前统一校验：题库、抽签。
+ * 返回 false = 未通过（已 alert 说明原因与解决办法），调用方应直接 return。
+ *
+ * 为什么必须有：此前题库未导入时，initCardDeck() 会造出「displayMode=cardflip
+ * 但 cards=[]」的矛盾状态，大屏静默显示"等待出题"，主持人在台上无从判断。
+ */
+function requireReady(round, opts = {}) {
+  if (opts.needDraw !== false && !state.draw.teamOrder.length) {
+    alert('请先完成出场顺序抽签。\n\n位置：赛前准备面板 → [抽签]');
+    switchPanel(0);
+    return false;
+  }
+  if (!state.questions.length) {
+    alert('尚未导入题库，无法开始本环节。\n\n位置：赛前准备面板 → [导入题库 JSON]\n选择项目目录下的 questions.json');
+    switchPanel(0);
+    return false;
+  }
+  const n = countQuestions(round);
+  if (!n) {
+    const NAMES = ['','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令'];
+    alert(`题库里没有「${NAMES[round]}」（round: ${round}）的题目。\n\n`
+        + `当前题库共 ${state.questions.length} 道题，但 round=${round} 的有 0 道。\n`
+        + `请确认导入的是完整的 questions.json。`);
+    switchPanel(0);
+    return false;
+  }
+  return true;
+}
+
 // ── R1 个人必答 ───────────────────────────────────
 function r1Init() {
-  if (!state.draw.teamOrder.length) return alert('请先完成抽签');
+  if (!requireReady(1)) return;
   initR1();
   switchPanel(1);
-  initCardDeck(1);
+  if (!initCardDeck(1)) {
+    alert('翻牌牌组生成失败。\n\n请检查赛前准备面板中「翻牌选题」是否被关闭。');
+    return;
+  }
   render();
 }
 function r1SetMem(i) { state.r1.currentMemberIdx = i; save(); render(); }
@@ -1352,7 +1391,12 @@ function doFlipCard(id) {
 }
 
 // ── R2 团队共答 ───────────────────────────────────
-function r2Init() { initR2(); switchPanel(2); initCardDeck(2); render(); }
+function r2Init() {
+  if (!requireReady(2, { needDraw:false })) return;   // R2 五队同答，不依赖出场顺序
+  initR2(); switchPanel(2);
+  if (!initCardDeck(2)) { alert('翻牌牌组生成失败。请检查「翻牌选题」是否被关闭。'); return; }
+  render();
+}
 function r2ReadQ() {
   if (state.r2.currentQIdx == null) return;
   speakQueue(buildQuestionSegments(state.questions[state.r2.currentQIdx]), () => {
@@ -1389,7 +1433,10 @@ function doR2Score(teamId, correct) {
 }
 
 // ── R3 擂台抢答 ───────────────────────────────────
-function r3Init() { initR3(); switchPanel(3); render(); }
+function r3Init() {
+  if (!requireReady(3, { needDraw:false })) return;   // R3 抢答，不依赖出场顺序
+  initR3(); switchPanel(3); render();
+}
 function r3StartQ() {
   const used = state.r3.usedQIds;
   const pool = state.questions.filter(q => q.round === 3 && !used.includes(q.id));
@@ -1436,7 +1483,17 @@ function doR3Reset() {
 }
 
 // ── R4 识图找茬 ───────────────────────────────────
-function r4Init() { initR4(); switchPanel(4); initCardDeck(4); render(); }
+function r4Init() {
+  if (!requireReady(4)) return;
+  if (!Object.keys(state.draw.r4ImageMap || {}).length) {
+    alert('尚未完成第四环节图题分配，无法开始。\n\n位置：赛前准备面板 → [随机分配图题]');
+    switchPanel(0);
+    return;
+  }
+  initR4(); switchPanel(4);
+  if (!initCardDeck(4)) { alert('翻牌牌组生成失败。请检查「翻牌选题」是否被关闭。'); return; }
+  render();
+}
 function r4Prev() {
   if (state.r4.currentTeamIdx > 0) {
     state.r4.currentTeamIdx--;
@@ -1499,7 +1556,7 @@ function doR4Score() {
 }
 // ── R5 飞花令 ────────────────────────────────────
 function r5Init() {
-  if (!state.draw.teamOrder.length) return alert('请先完成抽签');
+  if (!requireReady(5)) return;
   initR5(); switchPanel(5); render();
 }
 function r5SetTheme(i) { r5StartTheme(i); startTimer(state.r5.timerSec*1000, 5); cdSpoken.clear(); render(); }

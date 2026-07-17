@@ -791,6 +791,10 @@ function forceOverrideTeamOrder(newOrder, operator) {
 function initCardDeck(round) {
   if (!state.cardFlip.rounds[round]) return false;
   let cards = [];
+  // 说明：下方任一分支都可能因「题库未导入」或「R4 未分配图」而产出空牌组。
+  // 空牌组必须【在改动 state 之前】就返回 false —— 否则会造出
+  // displayMode='cardflip' 但 cards=[] 的矛盾状态，大屏会静默掉回"等待出题"，
+  // 主持人在台上完全不知道发生了什么。见函数末尾的守卫。
   if (round === 1) {
     const pool = state.questions.filter(q => q.round === 1);
     const shuffled = fisherYates(pool).slice(0, 40);
@@ -821,6 +825,11 @@ function initCardDeck(round) {
       used:     false,
     }));
   }
+
+  // 守卫：牌组为空就不进入翻牌模式，且【不改动任何 state】。
+  // 调用方必须检查返回值并给出可操作的提示（见 index.html 各 rxInit）。
+  if (!cards.length) return false;
+
   state.cardFlip.cards = cards;
   state.cardFlip.context = {
     round,
@@ -834,6 +843,11 @@ function initCardDeck(round) {
   state.displayMode = 'cardflip';
   save();
   return true;
+}
+
+/** 某环节可用的题目数（翻牌与出题的前置条件） */
+function countQuestions(round) {
+  return state.questions.filter(q => q.round === round).length;
 }
 
 /** 选手选牌（翻开某张） */
