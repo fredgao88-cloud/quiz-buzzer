@@ -740,6 +740,26 @@ function drawR4Images(imageKeys) {
   return true;
 }
 
+/**
+ * 手动设置出场顺序（线下抽签后录入 / 拖拽排序用）
+ * newOrder: teamId[]，必须是全部队伍的一个排列
+ * 与 forceOverrideTeamOrder 的区别：这是【锁定前】的正常录入路径，不需要操作人备注；
+ * 锁定后拒绝改动（改动请走 forceOverrideTeamOrder 暗门）。
+ * 返回 true=成功，false=已锁定或顺序不合法。
+ */
+function setTeamOrderManual(newOrder) {
+  if (state.draw.orderLocked) return false;
+  if (!Array.isArray(newOrder) || newOrder.length !== state.teams.length) return false;
+  const ids   = state.teams.map(t => t.id).slice().sort((a, b) => a - b);
+  const given = newOrder.slice().sort((a, b) => a - b);
+  if (ids.join(',') !== given.join(',')) return false;   // 必须是全部队伍的排列，不多不少不重
+  const prev = [...state.draw.teamOrder];
+  state.draw.teamOrder = [...newOrder];
+  state.draw.log.push({ type: 'set_order_manual', prev, result: [...newOrder], ts: Date.now() });
+  save();
+  return true;
+}
+
 /** 锁定出场顺序 */
 function lockDrawOrder() {
   if (!state.draw.teamOrder.length) return false;

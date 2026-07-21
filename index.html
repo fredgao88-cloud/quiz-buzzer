@@ -108,9 +108,16 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
 
 /* draw */
 .draw-order-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:6px 0}
+.draw-order-row.sortable{flex-wrap:nowrap;overflow-x:auto;padding-bottom:6px}
 .draw-slot{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 14px;border-radius:8px;border:2px solid var(--border);background:var(--surface2);min-width:80px;text-align:center}
 .draw-slot .slot-num{font-size:11px;color:var(--muted)}
 .draw-slot .slot-name{font-size:14px;font-weight:700}
+/* 可拖拽排序的出场顺序卡片 */
+.draw-slot.drag{cursor:grab;user-select:none;transition:box-shadow .15s,transform .15s}
+.draw-slot.drag:hover{box-shadow:0 4px 14px #0006}
+.draw-slot.drag:active{cursor:grabbing}
+.draw-slot.dragging{opacity:.35;border-style:dashed}
+.draw-slot .grip{font-size:12px;color:var(--muted);letter-spacing:2px;line-height:1}
 
 /* flip cards */
 .flip-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px}
@@ -191,12 +198,14 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     <div id="p0-ranking" class="teams-grid"></div>
   </div>
   <div class="card">
-    <div class="card-title">出场顺序抽签 <span class="pill" id="p0-order-status">未抽签</span></div>
+    <div class="card-title">出场顺序 <span class="pill" id="p0-order-status">未排列</span></div>
+    <div id="p0-order-hint" style="font-size:12px;color:var(--muted);margin-bottom:2px"></div>
     <div id="p0-order-disp" class="draw-order-row"></div>
     <div class="row" style="margin-top:8px">
-      <button class="btn-primary" onclick="doDraw()">抽签</button>
-      <button class="btn-ghost" id="btn-lock-order" style="display:none" onclick="doLockOrder()">锁定顺序</button>
-      <button class="btn-ghost btn-sm" id="btn-redraw" style="display:none" onclick="doRedraw()">重新抽签</button>
+      <button class="btn-primary btn-sm" id="btn-order-init" onclick="doOrderInit()">开始排列</button>
+      <button class="btn-ghost btn-sm" id="btn-order-random" onclick="doDraw()">随机排列</button>
+      <button class="btn-ghost btn-sm" id="btn-lock-order" style="display:none" onclick="doLockOrder()">锁定顺序</button>
+      <button class="btn-ghost btn-sm" id="btn-order-reset" style="display:none" onclick="doOrderReset()">重置</button>
     </div>
   </div>
   <div class="card">
@@ -829,26 +838,42 @@ function renderP0() {
 
   // 出场顺序
   const order = state.draw.teamOrder;
-  const oSt = document.getElementById('p0-order-status');
-  const oD  = document.getElementById('p0-order-disp');
+  const oSt   = document.getElementById('p0-order-status');
+  const oD    = document.getElementById('p0-order-disp');
+  const oHint = document.getElementById('p0-order-hint');
+  const locked  = state.draw.orderLocked;
+  const canDrag = order.length && !locked;
+
+  oD.classList.toggle('sortable', canDrag);
   if (order.length) {
-    oSt.textContent = state.draw.orderLocked ? '已锁定' : '已抽签';
+    oSt.textContent = locked ? '已锁定' : '已排列';
+    oHint.textContent = locked
+      ? '已锁定。如需修改请到「设置 → 高级选项」使用强制覆盖。'
+      : '线下抽签后，按住队伍卡片左右拖动，排成实际出场顺序。';
     oD.innerHTML = order.map((tid, i) => {
       const t = state.teams.find(t => t.id === tid);
       const c = tColor(t || {id:tid});
-      return `<div class="draw-slot" style="border-color:${c}66">
-        <span class="slot-num">第${i+1}位</span>
+      return `<div class="draw-slot${canDrag ? ' drag' : ''}" data-tid="${tid}"
+                   ${canDrag ? 'draggable="true" ondragstart="orderDragStart(event)" ondragend="orderDragEnd(event)"' : ''}
+                   style="border-color:${c}66">
+        ${canDrag ? '<span class="grip">⠿</span>' : ''}
+        <span class="slot-num" data-pos>第${i+1}位</span>
         <span class="slot-name" style="color:${c}">${escapeHtml(t?.name||'?')}</span>
         <span class="slot-num">ID:${tid}</span>
       </div>`;
     }).join('');
-    document.getElementById('btn-lock-order').style.display = state.draw.orderLocked ? 'none' : '';
-    document.getElementById('btn-redraw').style.display = state.draw.orderLocked ? 'none' : '';
+    document.getElementById('btn-order-init').style.display   = 'none';
+    document.getElementById('btn-order-random').style.display = locked ? 'none' : '';
+    document.getElementById('btn-lock-order').style.display   = locked ? 'none' : '';
+    document.getElementById('btn-order-reset').style.display  = locked ? 'none' : '';
   } else {
-    oSt.textContent = '未抽签';
+    oSt.textContent = '未排列';
+    oHint.textContent = '点「开始排列」按默认顺序生成卡片再拖动，或点「随机排列」。';
     oD.innerHTML = '';
-    document.getElementById('btn-lock-order').style.display = 'none';
-    document.getElementById('btn-redraw').style.display = 'none';
+    document.getElementById('btn-order-init').style.display   = '';
+    document.getElementById('btn-order-random').style.display = '';
+    document.getElementById('btn-lock-order').style.display   = 'none';
+    document.getElementById('btn-order-reset').style.display  = 'none';
   }
 
   // 图题分配
@@ -1264,17 +1289,92 @@ requestAnimationFrame(timerLoop);
 // 操作函数
 // ────────────────────────────────────────────────
 
-// ── 抽签 ─────────────────────────────────────────
-function doDraw() {
-  drawTeamOrder();
-  document.getElementById('btn-lock-order').style.display = '';
-  document.getElementById('btn-redraw').style.display = '';
+// ── 出场顺序 ─────────────────────────────────────
+// 主流程：线下抽签 → 系统里拖拽排序。随机排列仅作便捷/测试用。
+function doOrderInit() {
+  // 按队伍默认顺序生成卡片，之后拖动即可
+  if (!setTeamOrderManual(state.teams.map(t => t.id))) {
+    alert('已锁定，无法重排。'); return;
+  }
   render();
 }
-function doLockOrder() { lockDrawOrder(); render(); }
-function doRedraw() {
-  if (state.draw.orderLocked) return alert('已锁定。如需修改请使用设置中的强制覆盖功能。');
-  state.draw.teamOrder = []; save(); doDraw();
+function doDraw() {                      // 「随机排列」
+  if (state.draw.orderLocked) return alert('已锁定，无法重排。');
+  drawTeamOrder();
+  render();
+}
+function doOrderReset() {
+  if (state.draw.orderLocked) return alert('已锁定，无法重置。');
+  if (!confirm('清空当前出场顺序？')) return;
+  state.draw.teamOrder = []; save(); render();
+}
+function doLockOrder() {
+  if (!state.draw.teamOrder.length) return alert('请先排列出场顺序。');
+  if (!confirm('锁定后不能再拖动调整（除非用设置里的强制覆盖）。确认锁定？')) return;
+  lockDrawOrder(); render();
+}
+
+// ── 出场顺序拖拽排序 ─────────────────────────────
+// 拖动时卡片在 DOM 里实时移动，松手（dragend）才把最终 DOM 顺序提交到 state。
+// 提交前不 render，避免打断拖拽。
+let _orderDragEl = null;
+
+function orderDragStart(e) {
+  _orderDragEl = e.currentTarget;
+  e.dataTransfer.effectAllowed = 'move';
+  // 火狐需要 setData 才会触发拖拽
+  try { e.dataTransfer.setData('text/plain', _orderDragEl.dataset.tid || ''); } catch(_) {}
+  requestAnimationFrame(() => _orderDragEl && _orderDragEl.classList.add('dragging'));
+}
+
+function orderDragEnd() {
+  if (!_orderDragEl) return;
+  _orderDragEl.classList.remove('dragging');
+  _orderDragEl = null;
+  // 读取拖拽后的真实 DOM 顺序，提交到 state
+  const cont = document.getElementById('p0-order-disp');
+  const newOrder = [...cont.querySelectorAll('.draw-slot')].map(el => +el.dataset.tid);
+  if (newOrder.length === state.teams.length && setTeamOrderManual(newOrder)) {
+    render();   // 重绘以更新「第X位」编号
+  } else {
+    render();   // 提交失败（理论上不会）也重绘，回到 state 的真实顺序
+  }
+}
+
+// 容器级 dragover：根据鼠标位置把被拖卡片实时插到正确位置
+(function initOrderSortable() {
+  const cont = document.getElementById('p0-order-disp');
+  if (!cont) return;
+  cont.addEventListener('dragover', e => {
+    if (!_orderDragEl) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const after = orderDragAfter(cont, e.clientX);
+    if (after == null) cont.appendChild(_orderDragEl);
+    else if (after !== _orderDragEl) cont.insertBefore(_orderDragEl, after);
+    orderRenumber(cont);
+  });
+  cont.addEventListener('drop', e => e.preventDefault());
+})();
+
+// 找出鼠标 x 右侧最近的卡片（被拖卡片应插到它前面）；返回 null 表示插到末尾
+function orderDragAfter(cont, x) {
+  const els = [...cont.querySelectorAll('.draw-slot:not(.dragging)')];
+  let best = null, bestOffset = -Infinity;
+  for (const el of els) {
+    const box = el.getBoundingClientRect();
+    const offset = x - (box.left + box.width / 2);
+    if (offset < 0 && offset > bestOffset) { bestOffset = offset; best = el; }
+  }
+  return best;
+}
+
+// 拖拽过程中实时更新「第X位」编号（松手前 state 还没变）
+function orderRenumber(cont) {
+  [...cont.querySelectorAll('.draw-slot')].forEach((el, i) => {
+    const pos = el.querySelector('[data-pos]');
+    if (pos) pos.textContent = `第${i+1}位`;
+  });
 }
 function doDrawImages() {
   if (!state.draw.teamOrder.length) return alert('请先完成出场顺序抽签');
