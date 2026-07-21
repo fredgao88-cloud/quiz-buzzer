@@ -414,13 +414,26 @@ function updateScoresBar() {
 }
 
 function updateScoresGrid() {
-  const ranking = getRanking();
-  document.getElementById('scores-grid').innerHTML = ranking.map((r, i) => {
-    const t = r.team;
+  // 卡片按【出场顺序】排列（后台 draw.teamOrder），不再按总分降序。
+  // 未抽签时回退为队伍默认顺序，保证始终有 5 张卡。
+  const order = state.draw.teamOrder?.length
+    ? state.draw.teamOrder
+    : state.teams.map(t => t.id);
+  const teams = order.map(id => state.teams.find(t => t.id === id)).filter(Boolean);
+
+  // 金框仍标【当前总分最高】的队，与卡片位置无关（并列时取第一个）。
+  let leadId = null, leadTotal = -Infinity;
+  for (const t of teams) {
+    const tot = teamTotal(t);
+    if (tot > leadTotal) { leadTotal = tot; leadId = t.id; }
+  }
+
+  document.getElementById('scores-grid').innerHTML = teams.map((t, i) => {
     const c = tColor(t);
-    return `<div class="score-card${i===0?' first':''}" style="border-color:${c}88">
+    const total = teamTotal(t);
+    return `<div class="score-card${t.id===leadId?' first':''}" style="border-color:${c}88">
       <div class="sc-name" style="color:${c}">${escapeHtml(t.name)}</div>
-      <div class="sc-total" style="color:${c}">${r.total}</div>
+      <div class="sc-total" style="color:${c}">${total}</div>
       <div class="sc-rounds">R1:${t.scores.r1||0} R2:${t.scores.r2||0} R3:${t.scores.r3||0} R4:${t.scores.r4||0} R5:${t.scores.r5||0}</div>
     </div>`;
   }).join('');
