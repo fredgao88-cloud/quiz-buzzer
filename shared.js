@@ -171,6 +171,9 @@ function defaultState() {
     // ── 大屏展示控制 ────────────────────────────
     showScoresOnDisplay: false,
     showAnswerOnDisplay: false,
+    // 选手所选的选项字母数组（如 ['B']）。大屏据此高亮：选对=绿、选错=红。
+    // 揭晓正确答案（showAnswerOnDisplay）之前先只显示它，实现「先红后揭晓」的两段式。
+    pickedAnswer: null,
     displayMode: 'question',     // question|scores|blank|cardflip|draw
 
     // ── TTS 配置 ────────────────────────────────
@@ -946,6 +949,7 @@ function initR1() {
   state.r1.currentMemberIdx = 0;
   state.r1.currentQIdx      = null;
   state.r1.usedQIds         = [];
+  state.pickedAnswer         = null;
   state.showAnswerOnDisplay  = false;
   state.showScoresOnDisplay  = false;
   resetTimer();

@@ -1212,14 +1212,34 @@ function submitMultiSel(elId) {
   autoJudge(elId, selected);
 }
 
+// 点选项后揭晓正确答案前的停顿（毫秒）：先让观众看清选手选的（错则红），再揭晓
+const REVEAL_DELAY = 1600;
+let _r1RevealTimer = null;
+function r1CancelReveal() {
+  if (_r1RevealTimer) { clearTimeout(_r1RevealTimer); _r1RevealTimer = null; }
+}
+
 function autoJudge(elId, selected) {
   const selKey = `_sel_${elId}`;
   if (elId === 'r1-q-box') {
+    if (_r1RevealTimer) return;          // 揭晓窗口内忽略重复点击，防止重复判分
     const q = state.r1.currentQIdx != null ? state.questions[state.r1.currentQIdx] : null;
     if (!q) return;
     const correct = checkAnswer(q, selected);
     window[selKey] = [];
-    doR1(correct);
+    // 两段式：① 先在大屏显示选手所选（选错=红），暂不揭晓正确答案
+    r1CancelAutoAdvance();               // 若上一题的自动切换还挂着，先撤掉
+    state.pickedAnswer = selected.slice();
+    state.showAnswerOnDisplay = false;
+    state.showScoresOnDisplay = false;
+    state.displayMode = 'question';
+    stopTimer();
+    save(); render();
+    // ② 停顿后揭晓正确答案 + 判分 + 播报 + 自动切下一位（doR1 内完成）
+    _r1RevealTimer = setTimeout(() => {
+      _r1RevealTimer = null;
+      if (state.currentRound === 1) doR1(correct);
+    }, REVEAL_DELAY);
   } else if (elId === 'r3-q-box') {
     const q = state.r3.currentQIdx != null ? state.questions[state.r3.currentQIdx] : null;
     if (!q) return;
@@ -1536,6 +1556,7 @@ function r1ReadQ() {
 }
 function r1NextAnswerer() {
   r1CancelAutoAdvance();                 // 手动推进则取消待触发的自动切换，避免跳两位
+  r1CancelReveal();                      // 也撤掉可能挂着的揭晓定时器
   const order = state.draw.teamOrder;
   let tIdx = state.r1.currentTeamIdx;
   let mIdx = state.r1.currentMemberIdx + 1;
@@ -1544,6 +1565,7 @@ function r1NextAnswerer() {
   state.r1.currentTeamIdx   = tIdx;
   state.r1.currentMemberIdx = mIdx;
   state.r1.currentQIdx      = null;
+  state.pickedAnswer         = null;   // 清掉上一位选手所选，避免红/绿残留到下一位
   state.showAnswerOnDisplay  = false;
   state.showScoresOnDisplay  = false;
   state.displayMode = 'cardflip';
@@ -1565,6 +1587,7 @@ function doR1Violation() {
 }
 
 function doR1(result, note = '') {
+  r1CancelReveal();   // 若揭晓定时器还挂着（手动按钮抢在其前面），撤掉以免重复判分
   const event = scoreR1(result, note);
   if (!event) return alert('请先选择答题队员');
   stopTimer(); cdSpoken.clear();
@@ -1645,6 +1668,8 @@ function doFlipCard(id) {
     }
   }
   state.showAnswerOnDisplay = false;
+  state.pickedAnswer = null;     // 新翻出的题，清掉上一题的选手所选
+  r1CancelReveal();              // 撤掉可能残留的揭晓定时器
   save();
 
   // 1.5秒后自动确认（让display.html播完翻牌动画）
