@@ -769,11 +769,27 @@ function lockDrawOrder() {
   return true;
 }
 
+/** 解锁出场顺序（赛前准备阶段可自由解锁重排；解锁后恢复拖拽） */
+function unlockDrawOrder() {
+  state.draw.orderLocked = false;
+  state.draw.log.push({ type:'unlock_order', ts: Date.now() });
+  save();
+  return true;
+}
+
 /** 锁定图题分配 */
 function lockDrawImages() {
   if (!Object.keys(state.draw.r4ImageMap).length) return false;
   state.draw.imageLocked = true;
   state.draw.log.push({ type:'lock_images', ts: Date.now() });
+  save();
+  return true;
+}
+
+/** 解锁图题分配 */
+function unlockDrawImages() {
+  state.draw.imageLocked = false;
+  state.draw.log.push({ type:'unlock_images', ts: Date.now() });
   save();
   return true;
 }

@@ -205,6 +205,7 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
       <button class="btn-primary btn-sm" id="btn-order-init" onclick="doOrderInit()">开始排列</button>
       <button class="btn-ghost btn-sm" id="btn-order-random" onclick="doDraw()">随机排列</button>
       <button class="btn-ghost btn-sm" id="btn-lock-order" style="display:none" onclick="doLockOrder()">锁定顺序</button>
+      <button class="btn-ghost btn-sm" id="btn-unlock-order" style="display:none" onclick="doUnlockOrder()">解锁</button>
       <button class="btn-ghost btn-sm" id="btn-order-reset" style="display:none" onclick="doOrderReset()">重置</button>
     </div>
   </div>
@@ -212,8 +213,9 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     <div class="card-title">第四环节图题分配 <span class="pill" id="p0-img-status">未分配</span></div>
     <div id="p0-img-disp" class="draw-order-row"></div>
     <div class="row" style="margin-top:8px">
-      <button class="btn-primary" onclick="doDrawImages()">随机分配图题</button>
-      <button class="btn-ghost" id="btn-lock-images" style="display:none" onclick="doLockImages()">锁定分配</button>
+      <button class="btn-primary btn-sm" onclick="doDrawImages()">随机分配图题</button>
+      <button class="btn-ghost btn-sm" id="btn-lock-images" style="display:none" onclick="doLockImages()">锁定分配</button>
+      <button class="btn-ghost btn-sm" id="btn-unlock-images" style="display:none" onclick="doUnlockImages()">解锁</button>
     </div>
   </div>
   <div class="card">
@@ -848,7 +850,7 @@ function renderP0() {
   if (order.length) {
     oSt.textContent = locked ? '已锁定' : '已排列';
     oHint.textContent = locked
-      ? '已锁定。如需修改请到「设置 → 高级选项」使用强制覆盖。'
+      ? '已锁定，防止误拖。点「解锁」即可重新排序。'
       : '线下抽签后，按住队伍卡片左右拖动，排成实际出场顺序。';
     oD.innerHTML = order.map((tid, i) => {
       const t = state.teams.find(t => t.id === tid);
@@ -865,6 +867,7 @@ function renderP0() {
     document.getElementById('btn-order-init').style.display   = 'none';
     document.getElementById('btn-order-random').style.display = locked ? 'none' : '';
     document.getElementById('btn-lock-order').style.display   = locked ? 'none' : '';
+    document.getElementById('btn-unlock-order').style.display = locked ? '' : 'none';
     document.getElementById('btn-order-reset').style.display  = locked ? 'none' : '';
   } else {
     oSt.textContent = '未排列';
@@ -873,6 +876,7 @@ function renderP0() {
     document.getElementById('btn-order-init').style.display   = '';
     document.getElementById('btn-order-random').style.display = '';
     document.getElementById('btn-lock-order').style.display   = 'none';
+    document.getElementById('btn-unlock-order').style.display = 'none';
     document.getElementById('btn-order-reset').style.display  = 'none';
   }
 
@@ -890,11 +894,13 @@ function renderP0() {
         <span class="slot-num">${escapeHtml(imgMap[tid]||'-')}</span>
       </div>`;
     }).join('');
-    document.getElementById('btn-lock-images').style.display = state.draw.imageLocked ? 'none' : '';
+    document.getElementById('btn-lock-images').style.display   = state.draw.imageLocked ? 'none' : '';
+    document.getElementById('btn-unlock-images').style.display = state.draw.imageLocked ? '' : 'none';
   } else {
     iSt.textContent = '未分配';
     iD.innerHTML = '';
-    document.getElementById('btn-lock-images').style.display = 'none';
+    document.getElementById('btn-lock-images').style.display   = 'none';
+    document.getElementById('btn-unlock-images').style.display = 'none';
   }
 
   // 题库
@@ -1310,8 +1316,12 @@ function doOrderReset() {
 }
 function doLockOrder() {
   if (!state.draw.teamOrder.length) return alert('请先排列出场顺序。');
-  if (!confirm('锁定后不能再拖动调整（除非用设置里的强制覆盖）。确认锁定？')) return;
+  if (!confirm('锁定后卡片不能再拖动，防止比赛中误碰。确认锁定？')) return;
   lockDrawOrder(); render();
+}
+function doUnlockOrder() {
+  if (!confirm('解锁后可重新拖动出场顺序。确认解锁？')) return;
+  unlockDrawOrder(); render();
 }
 
 // ── 出场顺序拖拽排序 ─────────────────────────────
@@ -1387,6 +1397,10 @@ function doDrawImages() {
   render();
 }
 function doLockImages() { lockDrawImages(); render(); }
+function doUnlockImages() {
+  if (!confirm('解锁后可重新分配图题。确认解锁？')) return;
+  unlockDrawImages(); render();
+}
 function doResetDraw() { resetDraw(); render(); }
 
 function loadQFile(input) {
