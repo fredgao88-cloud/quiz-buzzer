@@ -1255,8 +1255,17 @@ function renderFlipGrid(elId, cards, ctx) {
 }
 
 // ── 各队分数小格 ─────────────────────────────────
+// 按出场顺序 draw.teamOrder 排列（与大屏计分栏一致）；未抽签时回退设置顺序。
+function orderedTeams() {
+  const order = state.draw.teamOrder;
+  if (!order || !order.length) return state.teams;
+  const byOrder = order.map(id => state.teams.find(t => t.id === id)).filter(Boolean);
+  // 兜底：若 teamOrder 意外缺队，把漏掉的按设置顺序补在后面，保证 5 张都在
+  for (const t of state.teams) if (!byOrder.includes(t)) byOrder.push(t);
+  return byOrder;
+}
 function renderRoundScores(elId, rKey) {
-  document.getElementById(elId).innerHTML = state.teams.map(t => {
+  document.getElementById(elId).innerHTML = orderedTeams().map(t => {
     const c = tColor(t);
     return `<div class="team-card" style="border-color:${c}55">
       <div class="team-name" style="color:${c}">${escapeHtml(t.name)}</div>
