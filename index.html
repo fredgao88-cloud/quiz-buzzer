@@ -254,8 +254,10 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     <div class="row" style="margin-bottom:10px">
       <button class="btn-primary" onclick="r1Init()">开始本环节</button>
       <button class="btn-warn btn-sm" onclick="r1ReadQ()">朗读题目</button>
-      <button class="btn-primary btn-sm" onclick="r1NextAnswerer()">下一题</button>
+      <button class="btn-primary btn-sm" onclick="r1NextAnswerer()">下一位</button>
       <label style="display:inline-flex;align-items:center;gap:3px;margin:0">倒计时<input type="number" id="r1-timer-sec" value="15" min="5" max="120" style="width:50px" onchange="state.r1.timerSec=+this.value;save()">秒</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin:0;font-size:12px" title="判分播报完后自动切到下一位答题人">
+        <input type="checkbox" id="r1-auto-advance" onchange="r1SetAutoAdvance(this.checked)">判分后自动下一位</label>
       <span id="r1-progress" style="color:var(--muted);font-size:12px"></span>
     </div>
     <!-- 当前答题人 -->
@@ -939,6 +941,7 @@ function renderP1() {
 
   renderRoundScores('r1-scores', 'r1');
   document.getElementById('r1-timer-sec').value = state.r1.timerSec;
+  document.getElementById('r1-auto-advance').checked = state.r1.autoAdvance !== false;
 }
 
 // ── P2 渲染 ─────────────────────────────────────
@@ -1523,6 +1526,7 @@ function r1ReadQ() {
   });
 }
 function r1NextAnswerer() {
+  r1CancelAutoAdvance();                 // 手动推进则取消待触发的自动切换，避免跳两位
   const order = state.draw.teamOrder;
   let tIdx = state.r1.currentTeamIdx;
   let mIdx = state.r1.currentMemberIdx + 1;
@@ -1579,8 +1583,28 @@ function doR1(result, note = '') {
   } else {
     resultText = `回答正确，${memberName}得${scoreToSpeech(event.delta)}，个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
   }
-  speak(resultText);
+  // 播报完成后自动切下一位。onend 在 TTS 关闭/失败时也会立即回调，故两种情况都能推进。
+  speak(resultText, { onend: r1ScheduleAutoAdvance });
 }
+
+// ── R1 判分后自动切换答题人 ───────────────────────
+// 接在成绩播报【结束后】+ 一小段缓冲再切，让观众看清答案和分数。
+// 手动点「下一题」会取消待触发的自动切换，避免跳两位。
+let _r1AdvanceTimer = null;
+function r1CancelAutoAdvance() {
+  if (_r1AdvanceTimer) { clearTimeout(_r1AdvanceTimer); _r1AdvanceTimer = null; }
+}
+function r1ScheduleAutoAdvance() {
+  if (!state.r1.autoAdvance) return;         // 开关关闭则不自动
+  if (state.currentRound !== 1) return;      // 已离开第一环节，别乱切
+  r1CancelAutoAdvance();
+  _r1AdvanceTimer = setTimeout(() => {
+    _r1AdvanceTimer = null;
+    if (state.currentRound === 1) r1NextAnswerer();   // 末位会自行提示完成、不前进
+  }, 1200);
+}
+function r1SetAutoAdvance(on) { state.r1.autoAdvance = on; save(); }
+
 function r1InitDeck() { initCardDeck(1); render(); }
 function r2InitDeck() { initCardDeck(2); render(); }
 function r4InitDeck() { initCardDeck(4); render(); }

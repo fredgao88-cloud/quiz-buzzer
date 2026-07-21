@@ -75,6 +75,7 @@ function defaultState() {
       currentQIdx:     null, // 当前题目在 questions[] 中的索引
       usedQIds:        [],   // 已用题目 id
       timerSec:        15,
+      autoAdvance:     true, // 判分播报完后自动切到下一位答题人
     },
 
     // ── 第二环节 团队共答 ────────────────────────
