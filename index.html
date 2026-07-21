@@ -473,6 +473,27 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
           <input type="file" id="logo-file" accept="image/*" style="display:none" onchange="loadLogo(this)">
         </div>
       </div>
+      <div class="row" style="margin-top:10px;align-items:flex-start">
+        <div>
+          <label>赛前背景图（大屏整屏铺满）</label>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <button class="btn-ghost btn-sm" onclick="document.getElementById('prepbg-file').click()">上传</button>
+            <button class="btn-ghost btn-sm" id="prepbg-clear" onclick="clearPrepBg()" style="display:none">清除</button>
+            <input type="file" id="prepbg-file" accept="image/*" style="display:none" onchange="loadPrepBg(this)">
+            <img id="prepbg-preview" style="display:none;height:44px;border-radius:6px;border:1px solid var(--border,#1e3a5f);object-fit:cover">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="sep"></div>
+
+    <div class="s-section">
+      <h3>环节规则说明</h3>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">大屏进入「个人必答」翻牌选题时，会在选题界面上方显示这段规则。每行一条，留空则不显示。</div>
+      <div><label>个人必答规则</label>
+        <textarea id="s-rules-1" rows="6" style="width:100%;resize:vertical;line-height:1.7"
+                  placeholder="每行一条规则…" oninput="setRoundRules(1,this.value)"></textarea>
+      </div>
     </div>
     <div class="sep"></div>
 
@@ -1316,6 +1337,8 @@ function requireReady(round, opts = {}) {
 // ── R1 个人必答 ───────────────────────────────────
 function r1Init() {
   if (!requireReady(1)) return;
+  // 重开本环节 → 规则窗口重新展示并朗读（清掉「已读」标记，让下面的响应式播报重新触发）
+  if (state.roundRulesDismissed) delete state.roundRulesDismissed[1];
   initR1();
   switchPanel(1);
   if (!initCardDeck(1)) {
@@ -1323,6 +1346,57 @@ function r1Init() {
     return;
   }
   render();
+}
+
+// 大屏进入翻牌选题、且本环节配了规则时：亮出规则窗口 → 系统朗读 → 读完自动关窗。
+// 做成「响应式」——不论从顶栏标签还是 [开始本环节] 进来都会触发，只播一次。
+// 用 roundRulesDismissed[round] 三态做闸门：undefined=还没播 / false=展示中 / true=已读完关窗。
+let _rulesCloseTimer = null;
+function announceRulesIfNeeded() {
+  if (!window.IS_CONTROL) return;
+  const round = state.currentRound;
+  const inCF  = state.displayMode === 'cardflip' && state.cardFlip?.cards?.length > 0;
+  if (!inCF) return;
+  if (!state.roundRules || state.roundRules[round] == null) return;
+  const txt = String(state.roundRules[round]).trim();
+  if (!txt) return;
+  if (!state.roundRulesDismissed) state.roundRulesDismissed = {};
+  if (state.roundRulesDismissed[round] !== undefined) return;   // 已展示过或已读完，不重播
+
+  // 标记「展示中」并亮窗（save 会再次触发本监听，但此时已非 undefined，直接跳过，不会重播）
+  state.roundRulesDismissed[round] = false;
+  save();
+
+  const RNAMES = ['','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令'];
+  let _closed = false;
+  const close = () => {
+    if (_closed) return;                       // 只关一次（onend 与保底定时器可能都触发）
+    _closed = true;
+    clearTimeout(_rulesCloseTimer);
+    if (!state.roundRulesDismissed) state.roundRulesDismissed = {};
+    state.roundRulesDismissed[round] = true;
+    save(); render();
+  };
+
+  const fullText = `${RNAMES[round] || '本环节'}，环节规则如下。${txt}`;
+  // 按字数估算朗读时长，作为「保底关窗」。onend 在 Chrome 上不总触发（甚至读完也不回调），
+  // 只靠它窗口可能永不关；反过来若被打断又可能瞬间回调。故：到点必关 + onend 提前关（但忽略过早的误触发）。
+  const estMs = Math.max(4000, fullText.length * 260 + 2000);
+  clearTimeout(_rulesCloseTimer);
+
+  if (isTTSAvailable()) {
+    const t0 = Date.now();
+    // 延后一拍再朗读：initCardDeck/render 这条调用栈里刚发生过 speechSynthesis.cancel()，
+    // 紧接着 speak() 会命中 Chrome「cancel 紧跟 speak 把新语句一起打断」的老 bug —— 语音没出声、
+    // 却立刻触发 onend、窗口秒关。脱离这条栈后再播即可稳定发声。主持人已点过按钮（有手势），不受自动播放限制。
+    setTimeout(() => {
+      speak(fullText, { onend: () => { if (Date.now() - t0 > 1500) close(); } });  // 忽略过早的 onend
+    }, 120);
+    _rulesCloseTimer = setTimeout(close, estMs);   // 保底：到点必关
+  } else {
+    // 未启用 TTS：按估算时长停留后自动关闭，避免窗口一闪而过
+    _rulesCloseTimer = setTimeout(close, estMs);
+  }
 }
 function r1SetMem(i) { state.r1.currentMemberIdx = i; save(); render(); }
 function r1ReadQ() {
@@ -1783,6 +1857,8 @@ function openSettings() {
   document.getElementById('s-tts-vol').value     = state.tts.volume ?? 1;
   document.getElementById('s-rate-val').textContent = `×${state.tts.rate||1}`;
   document.getElementById('s-brand').value        = state.brandName || '';
+  document.getElementById('s-rules-1').value       = (state.roundRules && state.roundRules[1] != null) ? state.roundRules[1] : '';
+  refreshPrepBgUI();
   document.getElementById('s-tts-engine').value  = state.tts.engine || 'auto';
   document.getElementById('s-tts-url').value     = state.tts.serverUrl || '';
   refreshTTSStatus();
@@ -1871,6 +1947,23 @@ function loadLogo(input) {
   r.onload=e=>{setLogo(e.target.result);render();};
   r.readAsDataURL(f);
 }
+function loadPrepBg(input) {
+  const f=input.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=e=>{setPrepBg(e.target.result);refreshPrepBgUI();render();};
+  r.readAsDataURL(f);
+  input.value='';
+}
+function clearPrepBg() {
+  setPrepBg(null); refreshPrepBgUI(); render();
+}
+function refreshPrepBgUI() {
+  const prev=document.getElementById('prepbg-preview');
+  const clr=document.getElementById('prepbg-clear');
+  if (!prev) return;
+  if (state.prepBg) { prev.src=state.prepBg; prev.style.display=''; clr.style.display=''; }
+  else { prev.removeAttribute('src'); prev.style.display='none'; clr.style.display='none'; }
+}
 function forceHintClick() {
   _forceClicks++;
   if (_forceClicks >= 3) {
@@ -1901,7 +1994,9 @@ speechSynthesis.onvoiceschanged = () => {
 
 // ── 共享状态监听 ─────────────────────────────────
 onChange(() => render());
+onChange(announceRulesIfNeeded);   // 进入翻牌选题时自动朗读环节规则并适时关窗
 render();
+announceRulesIfNeeded();           // 覆盖「刷新后已处于翻牌选题」的情形
 
 // ── 题库自动加载 ─────────────────────────────────
 // 题库为空时自动拉取同目录的 questions.json，省去每次手动导入。

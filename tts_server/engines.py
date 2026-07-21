@@ -76,13 +76,21 @@ class EdgeEngine(BaseEngine):
     default_voice = "zh-CN-XiaoxiaoNeural"
 
     ZH_VOICES = [
-        "zh-CN-XiaoxiaoNeural",   # 女声，亲和
-        "zh-CN-YunxiNeural",      # 男声，活泼（推荐主持播报）
+        # ── 普通话标准音色（微软神经语音全集，共 6 个）──
         "zh-CN-YunjianNeural",    # 男声，浑厚（推荐赛事播报）
-        "zh-CN-XiaoyiNeural",     # 女声，甜美
-        "zh-CN-YunyangNeural",    # 男声，新闻腔
-        "zh-CN-liaoning-XiaobeiNeural",
-        "zh-CN-shaanxi-XiaoniNeural",
+        "zh-CN-YunyangNeural",    # 男声，专业新闻腔
+        "zh-CN-YunxiNeural",      # 男声，活泼（推荐主持播报）
+        "zh-CN-YunxiaNeural",     # 男声，少年感
+        "zh-CN-XiaoxiaoNeural",   # 女声，亲和、温暖
+        "zh-CN-XiaoyiNeural",     # 女声，甜美、活泼
+        # ── 方言音色（按需选用）──
+        "zh-CN-liaoning-XiaobeiNeural",   # 女声，东北话
+        "zh-CN-shaanxi-XiaoniNeural",     # 女声，陕西话
+        # ── 港台口音（按需选用）──
+        "zh-HK-WanLungNeural",    # 男声，粤语
+        "zh-HK-HiuMaanNeural",    # 女声，粤语
+        "zh-TW-YunJheNeural",     # 男声，台湾国语
+        "zh-TW-HsiaoChenNeural",  # 女声，台湾国语
     ]
 
     def available(self) -> bool:

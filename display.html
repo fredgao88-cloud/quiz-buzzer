@@ -66,6 +66,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 #cardflip-area.show{display:flex}
 #cf-header{text-align:center}
 #cf-title{font-size:clamp(18px,2.5vw,30px);font-weight:800;color:var(--accent);letter-spacing:1px}
+/* 环节规则窗口：浮在屏幕正中央 */
+#cf-rules{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:6;width:min(88vw,860px);background:rgba(15,31,54,.97);border:1px solid var(--accent);border-radius:16px;box-shadow:0 12px 60px #000a,0 0 0 100vmax rgba(3,8,18,.55);overflow:hidden}
+#cf-rules-title{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;font-weight:800;font-size:clamp(15px,1.8vw,22px);padding:10px 20px;letter-spacing:1px}
+#cf-rules-body{padding:14px 22px;font-size:clamp(13px,1.5vw,19px);line-height:1.8;color:var(--text);max-height:34vh;overflow:auto;white-space:pre-wrap}
 #cf-subtitle{font-size:clamp(12px,1.4vw,18px);color:var(--muted);margin-top:6px}
 .cf-grid{display:grid;gap:clamp(8px,1vw,14px)}
 .cf-card{border-radius:12px;perspective:900px}
@@ -96,10 +100,24 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 
 /* 全屏无题提示 */
 #no-q-hint{font-size:clamp(16px,2vw,26px);color:var(--muted);text-align:center;padding:40px}
+
+/* ── 赛前背景图（整屏铺满，遮住顶栏/分数栏等一切） ── */
+#prep-cover{position:fixed;inset:0;z-index:100;display:none;background:var(--bg) center/cover no-repeat}
+#prep-cover.show{display:block}
+#prep-cover .prep-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);text-align:center;padding:40px}
+#prep-cover .prep-empty .pe-title{font-size:clamp(20px,3vw,36px);font-weight:800;color:var(--text)}
 </style>
 </head>
 <body>
 <script src="shared.js"></script>
+
+<!-- 赛前背景图整屏覆盖层 -->
+<div id="prep-cover">
+  <div class="prep-empty" id="prep-empty">
+    <div class="pe-title" id="prep-empty-title">荣资商厦服务技能大赛</div>
+    <div>请在控制台「设置 → 品牌 → 赛前背景图」上传背景图</div>
+  </div>
+</div>
 
 <!-- header -->
 <div id="header">
@@ -143,6 +161,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 
 <!-- card flip overlay -->
 <div id="cardflip-area">
+  <div id="cf-rules">
+    <div id="cf-rules-title">规则说明</div>
+    <div id="cf-rules-body"></div>
+  </div>
   <div id="cf-header">
     <div id="cf-title">翻牌选题</div>
     <div id="cf-subtitle"></div>
@@ -180,6 +202,7 @@ function fmtMs(ms) {
 
 // ── 主渲染 ──────────────────────────────────────
 function render() {
+  updatePrepCover();
   updateHeader();
   updateTimer();
   updateScoresBar();
@@ -204,6 +227,22 @@ function render() {
   // 分数栏
   if (state.showScoresOnDisplay) {
     updateScoresGrid();
+  }
+}
+
+// ── 赛前背景图整屏覆盖 ────────────────────────────
+function updatePrepCover() {
+  const cover = document.getElementById('prep-cover');
+  const isPrep = state.currentRound === 0;
+  cover.classList.toggle('show', isPrep);
+  if (!isPrep) { cover.style.backgroundImage = 'none'; return; }
+  if (state.prepBg) {
+    cover.style.backgroundImage = `url("${state.prepBg}")`;
+    document.getElementById('prep-empty').style.display = 'none';
+  } else {
+    cover.style.backgroundImage = 'none';
+    document.getElementById('prep-empty').style.display = '';
+    document.getElementById('prep-empty-title').textContent = state.brandName || '荣资商厦服务技能大赛';
   }
 }
 
@@ -261,19 +300,11 @@ function updateQuestion() {
   const img   = document.getElementById('q-image');
   const imgMiss = document.getElementById('q-image-missing');
 
-  // 赛前准备：显示主题图
+  // 赛前准备：整屏背景图由 #prep-cover 负责，这里只清空题目区
   if (state.currentRound === 0) {
+    hint.style.display = 'none';
     stem.style.display = 'none'; opts.style.display = 'none'; ansBox.style.display = 'none';
     img.style.display = 'none'; imgMiss.style.display = 'none';
-    if (state.logo) {
-      hint.style.display = '';
-      hint.innerHTML = `<img src="${escapeAttr(state.logo)}" style="max-width:70vw;max-height:60vh;border-radius:16px;box-shadow:0 8px 40px #0008;object-fit:contain">
-        <div style="margin-top:20px;font-size:clamp(20px,3vw,36px);font-weight:800;color:var(--text)">${escapeHtml(state.brandName || '荣资商厦服务技能大赛')}</div>`;
-    } else {
-      hint.style.display = '';
-      hint.innerHTML = `<div style="font-size:clamp(24px,4vw,48px);font-weight:800;color:var(--text)">${escapeHtml(state.brandName || '荣资商厦服务技能大赛')}</div>
-        <div style="margin-top:12px;font-size:clamp(14px,1.5vw,20px);color:var(--muted)">等待开始...</div>`;
-    }
     return;
   }
 
@@ -434,6 +465,20 @@ function updateCardFlip() {
     if (team) subtitle = `当前出题：${team.name}`;
   }
   document.getElementById('cf-subtitle').textContent = subtitle;
+
+  // 环节规则窗口（内容在控制台设置里维护）
+  const rulesEl = document.getElementById('cf-rules');
+  const rulesTxt = (state.roundRules && state.roundRules[round] != null)
+    ? String(state.roundRules[round]).trim() : '';
+  const rulesDismissed = !!(state.roundRulesDismissed && state.roundRulesDismissed[round]);
+  if (rulesTxt && !rulesDismissed) {
+    const RNAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令'];
+    document.getElementById('cf-rules-title').textContent = (RNAMES[round] || '本环节') + ' · 规则说明';
+    document.getElementById('cf-rules-body').textContent = rulesTxt;
+    rulesEl.style.display = 'block';
+  } else {
+    rulesEl.style.display = 'none';
+  }
 
   // 牌组标识 = 环节 + 牌 id 序列。换环节或重置牌组时它必变。
   //
