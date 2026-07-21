@@ -1213,7 +1213,7 @@ function submitMultiSel(elId) {
 }
 
 // 点选项后揭晓正确答案前的停顿（毫秒）：先让观众看清选手选的（错则红），再揭晓
-const REVEAL_DELAY = 1600;
+const REVEAL_DELAY = 700;
 let _r1RevealTimer = null;
 function r1CancelReveal() {
   if (_r1RevealTimer) { clearTimeout(_r1RevealTimer); _r1RevealTimer = null; }
@@ -1602,12 +1602,20 @@ function doR1(result, note = '') {
   const memberScore = team.memberScores[event.memberIdx] || 0;
   const teamScore = team.scores.r1 || 0;
   const total = teamTotal(team);
+  // 答错时要念出正确答案（字母 + 选项内容）
+  const q = state.r1.currentQIdx != null ? state.questions[state.r1.currentQIdx] : null;
+  const correctSpeech = (() => {
+    if (!q || !q.answer) return '';
+    const letter = Array.isArray(q.answer) ? q.answer.join('') : String(q.answer);
+    const optText = q.options?.['ABCDE'.indexOf(letter)] || '';
+    return `正确答案是${letter}${optText ? '，' + optText : ''}`;
+  })();
   let resultText;
   if (event.reason === 'violation') {
     resultText = `${team.name}违规，本题不得分，扣${scoreToSpeech(Math.abs(event.delta))}，`
                + `${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
   } else if (!correct) {
-    resultText = `回答错误，${memberName}个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
+    resultText = `回答错误。${correctSpeech}。${memberName}个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
   } else if (event.capped) {
     // 队伍已封顶：个人分照记，但队伍分不再增长。必须说清楚，否则台下会以为漏计分
     resultText = `回答正确，${memberName}个人累计${scoreToSpeech(memberScore)}，`
