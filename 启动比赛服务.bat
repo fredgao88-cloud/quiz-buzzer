@@ -22,8 +22,9 @@ echo.
 
 REM 只监听本机。两个页面靠 localStorage + BroadcastChannel 同步，
 REM 必须在同一台电脑的同一个浏览器里，对外开放端口没有意义。
+REM 用 serve.py（禁用浏览器缓存），改了代码后普通刷新即拿到最新版本。
 start "" http://localhost:8080/index.html
-python -m http.server 8080 --bind 127.0.0.1
+python serve.py 8080
 
 echo.
 echo 服务已停止。按任意键关闭窗口。

@@ -104,6 +104,7 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
 .buzz-locked{background:#1e3a5f33;border:2px solid var(--accent);color:#93c5fd}
 .buzz-supplement{background:#4c1d9533;border:2px solid var(--purple);color:#c4b5fd}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+@keyframes pulseBtn{0%,100%{box-shadow:0 0 0 2px var(--accent),0 4px 16px #3b82f555}50%{box-shadow:0 0 0 3px var(--accent),0 6px 26px #3b82f5aa}}
 .anim-pulse{animation:pulse .9s ease-in-out infinite}
 
 /* draw */
@@ -160,7 +161,7 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
 </head>
 <body>
 <script>window.IS_CONTROL = true;</script>
-<script src="shared.js"></script>
+<script src="shared.js?v=2"></script>
 
 <!-- topbar -->
 <div id="topbar">
@@ -270,6 +271,7 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
       <div class="row" style="margin-bottom:6px">
         <span style="font-size:12px;color:var(--muted)">翻牌选题</span>
         <button class="btn-ghost btn-sm" onclick="r1InitDeck()">重置牌组</button>
+        <label style="display:inline-flex;align-items:center;gap:3px;margin:0;font-size:12px" title="牌组张数，0=用全部可用题目。改动后自动重置牌组">牌数<input type="number" id="r1-deck-size" min="0" max="200" style="width:52px" onchange="setDeckSize(1,this.value);r1InitDeck()"><span style="color:var(--muted)">0=全部</span></label>
         <span id="r1-card-left" style="font-size:12px;color:var(--muted)"></span>
       </div>
       <div id="r1-flip-grid" class="flip-grid"></div>
@@ -295,30 +297,35 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
 <!-- P2 团队共答 -->
 <div class="panel" id="panel-2">
   <div class="card">
-    <div class="card-title">团队共答 <span class="pill">4题 · 5分/题 · 上限20分/队</span></div>
+    <div class="card-title">团队共答 <span class="pill">每队一轮 · 5分/题 · 上限20分/队</span></div>
     <div class="row" style="margin-bottom:10px">
       <button class="btn-primary" onclick="r2Init()">开始本环节</button>
-      <button class="btn-ghost btn-sm" onclick="r2ReadQ()">朗读题目</button>
+      <button class="btn-warn btn-sm" onclick="r2ReadQ()">朗读题目</button>
       <label style="display:inline-flex;align-items:center;gap:3px;margin:0">倒计时<input type="number" id="r2-timer-sec" value="40" min="5" max="300" style="width:50px" onchange="state.r2.timerSec=+this.value;save()">秒</label>
       <span id="r2-progress" style="color:var(--muted);font-size:12px"></span>
     </div>
-    <!-- 翻牌 -->
+    <!-- 翻牌上场（每队一张，按抽签顺序） -->
     <div style="margin-bottom:8px">
       <div class="row" style="margin-bottom:6px">
-        <span style="font-size:12px;color:var(--muted)">翻牌选题</span>
+        <span style="font-size:12px;color:var(--muted)">翻牌上场（每队一张）</span>
         <button class="btn-ghost btn-sm" onclick="r2InitDeck()">重置牌组</button>
         <span id="r2-card-left" style="font-size:12px;color:var(--muted)"></span>
       </div>
-      <div id="r2-flip-grid" class="flip-grid" style="grid-template-columns:repeat(4,1fr)"></div>
+      <div id="r2-flip-grid" class="flip-grid" style="grid-template-columns:repeat(5,1fr)"></div>
     </div>
-    <div id="r2-q-box" class="q-box"><span style="color:var(--muted)">请翻牌或等待出题</span></div>
-    <div style="margin-top:8px">
-      <div class="card-title">各队判分（同时亮板）</div>
-      <div id="r2-judge-panel"></div>
+    <!-- 当前答题队 + 队员（队员仅显示，不计分） -->
+    <div class="q-box" id="r2-answerer-box">
+      <div class="q-index">当前答题队</div>
+      <div id="r2-answerer-row" class="row"></div>
     </div>
-    <div class="row" style="margin-top:8px">
+    <!-- 题目 -->
+    <div id="r2-q-box" class="q-box"><span style="color:var(--muted)">请翻牌上场</span></div>
+    <!-- 判分（多选点选项自动判分；填空/超时用按钮） -->
+    <div class="row" style="margin-top:10px">
+      <button class="btn-success btn-sm" onclick="r2SubmitFill(true)">判对</button>
+      <button class="btn-danger btn-sm" onclick="r2SubmitFill(false)">判错</button>
       <button class="btn-ghost btn-sm" onclick="toggleShowAnswer()">公布答案</button>
-      <button class="btn-primary btn-sm" onclick="r2Next()">下一题（翻牌）</button>
+      <span style="font-size:11px;color:var(--muted)">← 多选可点选项自动判分；需先选队员</span>
     </div>
   </div>
   <div class="card">
@@ -502,10 +509,26 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
 
     <div class="s-section">
       <h3>环节规则说明</h3>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">大屏进入「个人必答」翻牌选题时，会在选题界面上方显示这段规则。每行一条，留空则不显示。</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">进入各环节时，大屏会居中弹出该环节规则并语音朗读，读完自动关窗。每行一条，留空则该环节不显示。</div>
       <div><label>个人必答规则</label>
-        <textarea id="s-rules-1" rows="6" style="width:100%;resize:vertical;line-height:1.7"
+        <textarea id="s-rules-1" rows="5" style="width:100%;resize:vertical;line-height:1.7"
                   placeholder="每行一条规则…" oninput="setRoundRules(1,this.value)"></textarea>
+      </div>
+      <div style="margin-top:8px"><label>团队共答规则</label>
+        <textarea id="s-rules-2" rows="5" style="width:100%;resize:vertical;line-height:1.7"
+                  placeholder="每行一条规则…" oninput="setRoundRules(2,this.value)"></textarea>
+      </div>
+      <div style="margin-top:8px"><label>擂台抢答规则</label>
+        <textarea id="s-rules-3" rows="5" style="width:100%;resize:vertical;line-height:1.7"
+                  placeholder="每行一条规则…" oninput="setRoundRules(3,this.value)"></textarea>
+      </div>
+      <div style="margin-top:8px"><label>识图找茬规则</label>
+        <textarea id="s-rules-4" rows="5" style="width:100%;resize:vertical;line-height:1.7"
+                  placeholder="每行一条规则…" oninput="setRoundRules(4,this.value)"></textarea>
+      </div>
+      <div style="margin-top:8px"><label>服务飞花令规则</label>
+        <textarea id="s-rules-5" rows="5" style="width:100%;resize:vertical;line-height:1.7"
+                  placeholder="每行一条规则…" oninput="setRoundRules(5,this.value)"></textarea>
       </div>
     </div>
     <div class="sep"></div>
@@ -755,8 +778,10 @@ function onTimerExpired(round) {
       }
       break;
     case 2:
-      // 团队共答超时：只提示举板，判分仍由主持人逐队录入
-      speak('时间到，请各队举板');
+      // 团队共答超时：本题按答错处理（0 分），播完提示后自动落分并进下一题
+      if (state.r2.currentQIdx != null && !state.showAnswerOnDisplay) {
+        speakQueue(['时间到，作答超时'], () => doR2(false));
+      }
       break;
     case 3:
       r3AutoTimeout();
@@ -942,51 +967,48 @@ function renderP1() {
   renderRoundScores('r1-scores', 'r1');
   document.getElementById('r1-timer-sec').value = state.r1.timerSec;
   document.getElementById('r1-auto-advance').checked = state.r1.autoAdvance !== false;
+  setDeckSizeInput('r1-deck-size', 1);
+}
+
+// 回填牌数输入框（用户正在输入时不打断）
+function setDeckSizeInput(elId, round) {
+  const el = document.getElementById(elId);
+  if (el && el !== document.activeElement) el.value = state.cardFlip.deckSize?.[round] ?? 0;
 }
 
 // ── P2 渲染 ─────────────────────────────────────
 function renderP2() {
-  document.getElementById('r2-progress').textContent =
-    `已用 ${state.r2.usedQIds.length}/4 题`;
+  const order = state.draw.teamOrder;
+  const tIdx  = state.r2.currentTeamIdx;
+  const team  = order.length ? getTeam(order[tIdx]) : null;
+  const mIdx  = state.r2.currentMemberIdx;
+  const c     = team ? tColor(team) : '#888';
+  const qTotal = state.r2.turnQIdxs?.length || 0;
+
+  document.getElementById('r2-progress').textContent = team
+    ? `第${tIdx+1}队上场（共${order.length}队）${qTotal ? ` · 本队第${Math.min(state.r2.qNum+1,qTotal)}/${qTotal}题` : ''}`
+    : (order.length && tIdx >= order.length ? '本环节已全部完成' : '请先完成赛前抽签并开始本环节');
+
+  const memberChosen = mIdx != null;
+  document.getElementById('r2-answerer-row').innerHTML = team
+    ? `<span style="color:${c};font-weight:700;font-size:15px">${escapeHtml(team.name)}</span>`
+      + team.members.map((m,i) =>
+          `<button class="member-btn${i===mIdx?' active':''}" onclick="r2SetMem(${i})">${escapeHtml(m)}</button>`
+        ).join('')
+      + (memberChosen
+          ? `<span style="font-size:11px;color:var(--muted);margin-left:6px">（不计分）</span>`
+          : `<span style="font-size:13px;color:var(--red);font-weight:700;margin-left:6px">← 请先选择答题队员，再提交答案</span>`)
+    : '<span style="color:var(--muted)">请先完成赛前抽签</span>';
+
   // 翻牌
   const r2cards = state.cardFlip.context?.round === 2 ? state.cardFlip.cards : [];
   renderFlipGrid('r2-flip-grid', r2cards, 'r2');
   document.getElementById('r2-card-left').textContent =
     r2cards.length ? `剩余 ${r2cards.filter(c=>!c.revealed&&!c.used).length}/${r2cards.length} 张` : '';
-  renderQBox('r2-q-box', state.r2.currentQIdx);
 
-  const q = state.r2.currentQIdx != null ? state.questions[state.r2.currentQIdx] : null;
-  document.getElementById('r2-judge-panel').innerHTML = state.teams.map(team => {
-    const c = tColor(team);
-    return `<div class="team-card" style="border-color:${c}55;margin-bottom:8px;text-align:left">
-      <div style="color:${c};font-weight:700;font-size:14px;margin-bottom:6px">${escapeHtml(team.name)}</div>
-      ${renderR2JudgeInputs(team.id, q)}
-      <div class="row" style="margin-top:6px">
-        <button class="btn-success btn-sm" onclick="doR2Score(${team.id},true)">得分</button>
-        <button class="btn-danger btn-sm" onclick="doR2Score(${team.id},false)">0分</button>
-      </div>
-    </div>`;
-  }).join('');
+  renderQBox('r2-q-box', state.r2.currentQIdx, true);   // interactive：多选可点选项
   renderRoundScores('r2-scores', 'r2');
   document.getElementById('r2-timer-sec').value = state.r2.timerSec;
-}
-
-function renderR2JudgeInputs(teamId, q) {
-  if (!q) return '<span style="color:var(--muted);font-size:12px">请选择题目</span>';
-  if (q.type === 'multi' && q.options) {
-    return '<div class="row">' + q.options.map((opt,i) => {
-      const l = 'ABCDE'[i];
-      return `<label style="font-size:12px;display:flex;align-items:center;gap:3px;cursor:pointer">
-        <input type="checkbox" id="r2c-${teamId}-${i}" value="${l}"> ${l}.${escapeHtml(opt)}</label>`;
-    }).join('') + '</div>';
-  }
-  if (q.type === 'fill_multi' && q.blanks) {
-    return q.blanks.map((b,i) =>
-      `<div style="margin-bottom:4px"><label style="font-size:11px">第${i+1}空</label>
-       <input type="text" id="r2b-${teamId}-${i}" placeholder="${escapeHtml(b.hint||'')}" style="width:100%"></div>`
-    ).join('');
-  }
-  return '<span style="color:var(--muted);font-size:12px">题型不支持</span>';
 }
 
 // ── P3 渲染 ─────────────────────────────────────
@@ -1168,7 +1190,14 @@ function renderQBox(elId, qIdx, interactive) {
         return `<div class="q-option${isSel?' selected':''}" style="cursor:pointer;${isSel?'background:#1e3a5f;border-color:var(--accent);color:#93c5fd':''}" onclick="toggleOptSel('${elId}','${l}',${isMulti})">${l}. ${escapeHtml(opt)}</div>`;
       }).join('') + '</div>';
       if (isMulti) {
-        html += `<div style="margin-top:6px"><button class="btn-primary btn-sm" onclick="submitMultiSel('${elId}')">提交多选答案</button></div>`;
+        const selCount = selected.length;
+        html += `<div style="margin-top:10px">
+          <button class="btn-primary" onclick="submitMultiSel('${elId}')"
+            style="width:100%;padding:14px;font-size:16px;font-weight:800;letter-spacing:1px;
+                   box-shadow:0 0 0 2px var(--accent),0 4px 16px #3b82f655;animation:pulseBtn 1.4s ease-in-out infinite">
+            ✅ 提交多选答案${selCount ? `（已选 ${selected.join('、')}）` : '（先勾选选项）'}
+          </button>
+        </div>`;
       }
     } else {
       html += '<div class="q-options">' + q.options.map((opt,i) => {
@@ -1179,8 +1208,20 @@ function renderQBox(elId, qIdx, interactive) {
     }
   }
   if (q.blanks?.length && q.type === 'fill_multi') {
-    html += '<div style="margin-top:6px;font-size:12px;color:var(--muted)">填空：' +
-      q.blanks.map((b,i)=>`第${i+1}空：${escapeHtml(b.hint||b.answer||'')}`).join(' / ') + '</div>';
+    // 填空答案后台常显（供操作员对照判分），样式同多选正确项
+    html += '<div class="q-options">' + q.blanks.map((b,i)=>{
+      const ans = Array.isArray(b.answer) ? b.answer.join(' / ') : String(b.answer||'');
+      return `<div class="q-option correct">第${i+1}空：${escapeHtml(ans)}</div>`;
+    }).join('') + '</div>';
+    // 团队共答填空题：框内给出醒目提交按钮（填空无选项可点，直接判对/判错提交）
+    if (interactive && elId === 'r2-q-box') {
+      html += `<div style="margin-top:10px;display:flex;gap:10px">
+        <button class="btn-success" onclick="r2SubmitFill(true)"
+          style="flex:1;padding:14px;font-size:16px;font-weight:800;letter-spacing:1px;box-shadow:0 0 0 2px #22c55e,0 4px 16px #22c55e55">✅ 答对（提交）</button>
+        <button class="btn-danger" onclick="r2SubmitFill(false)"
+          style="flex:1;padding:14px;font-size:16px;font-weight:800;letter-spacing:1px;box-shadow:0 0 0 2px #ef4444,0 4px 16px #ef444455">❌ 答错（提交）</button>
+      </div>`;
+    }
   }
   if (showAns && q.answer) {
     const ans = Array.isArray(q.answer) ? q.answer.join('、') : String(q.answer);
@@ -1213,7 +1254,7 @@ function submitMultiSel(elId) {
 }
 
 // 点选项后揭晓正确答案前的停顿（毫秒）：先让观众看清选手选的（错则红），再揭晓
-const REVEAL_DELAY = 700;
+const REVEAL_DELAY = 400;
 let _r1RevealTimer = null;
 function r1CancelReveal() {
   if (_r1RevealTimer) { clearTimeout(_r1RevealTimer); _r1RevealTimer = null; }
@@ -1240,6 +1281,24 @@ function autoJudge(elId, selected) {
       _r1RevealTimer = null;
       if (state.currentRound === 1) doR1(correct);
     }, REVEAL_DELAY);
+  } else if (elId === 'r2-q-box') {
+    if (_r2RevealTimer) return;          // 揭晓窗口内忽略重复点击
+    if (!r2RequireMember()) return;      // 未选队员：提示并拦下，保留已选选项
+    const q = state.r2.currentQIdx != null ? state.questions[state.r2.currentQIdx] : null;
+    if (!q) return;
+    const correct = checkAnswer(q, selected);
+    window[selKey] = [];
+    r2CancelReveal();
+    state.pickedAnswer = selected.slice();
+    state.showAnswerOnDisplay = false;
+    state.showScoresOnDisplay = false;
+    state.displayMode = 'question';
+    stopTimer();
+    save(); render();
+    _r2RevealTimer = setTimeout(() => {
+      _r2RevealTimer = null;
+      if (state.currentRound === 2) doR2(correct);
+    }, R2_REVEAL_DELAY);
   } else if (elId === 'r3-q-box') {
     const q = state.r3.currentQIdx != null ? state.questions[state.r3.currentQIdx] : null;
     if (!q) return;
@@ -1498,15 +1557,31 @@ function r1Init() {
 // 做成「响应式」——不论从顶栏标签还是 [开始本环节] 进来都会触发，只播一次。
 // 用 roundRulesDismissed[round] 三态做闸门：undefined=还没播 / false=展示中 / true=已读完关窗。
 let _rulesCloseTimer = null;
+function currentRoundHasQuestion() {
+  const r = state.currentRound;
+  if (r === 1) return state.r1.currentQIdx != null;
+  if (r === 2) return state.r2.currentQIdx != null;
+  if (r === 3) return state.r3.currentQIdx != null;
+  if (r === 4) return state.r4.currentQIdx != null;
+  return false;   // R5 飞花令无 currentQIdx
+}
 function announceRulesIfNeeded() {
   if (!window.IS_CONTROL) return;
   const round = state.currentRound;
-  const inCF  = state.displayMode === 'cardflip' && state.cardFlip?.cards?.length > 0;
-  if (!inCF) return;
+  if (round < 1 || round > 5) return;
   if (!state.roundRules || state.roundRules[round] == null) return;
   const txt = String(state.roundRules[round]).trim();
   if (!txt) return;
   if (!state.roundRulesDismissed) state.roundRulesDismissed = {};
+  // 已出题：若规则还在展示中就立即结束（防止本队答完回翻牌时规则又弹回来），并不再弹
+  if (currentRoundHasQuestion()) {
+    if (state.roundRulesDismissed[round] === false) {
+      state.roundRulesDismissed[round] = true;
+      clearTimeout(_rulesCloseTimer);
+      save();   // 再次触发本函数，但此时 dismissed=true，直接跳过，无递归风险
+    }
+    return;
+  }
   if (state.roundRulesDismissed[round] !== undefined) return;   // 已展示过或已读完，不重播
 
   // 标记「展示中」并亮窗（save 会再次触发本监听，但此时已非 undefined，直接跳过，不会重播）
@@ -1549,7 +1624,8 @@ function r1ReadQ() {
   if (state.r1.currentQIdx == null) return;
   const q = state.questions[state.r1.currentQIdx];
   if (!q) return;
-  speakQueue(buildQuestionSegments(q), () => {
+  // 读完题末尾追加「开始答题」，播完这句才起倒计时
+  speakQueue([...buildQuestionSegments(q), '开始答题'], () => {
     startTimer(state.r1.timerSec * 1000, 1);
     cdSpoken.clear();
   });
@@ -1599,8 +1675,6 @@ function doR1(result, note = '') {
   const correct = result === true;
   const team = state.teams.find(t => t.id === event.teamId);
   const memberName = event.memberName || `队员${event.memberIdx+1}`;
-  const memberScore = team.memberScores[event.memberIdx] || 0;
-  const teamScore = team.scores.r1 || 0;
   const total = teamTotal(team);
   // 答错时要念出正确答案（字母 + 选项内容）
   const q = state.r1.currentQIdx != null ? state.questions[state.r1.currentQIdx] : null;
@@ -1613,15 +1687,14 @@ function doR1(result, note = '') {
   let resultText;
   if (event.reason === 'violation') {
     resultText = `${team.name}违规，本题不得分，扣${scoreToSpeech(Math.abs(event.delta))}，`
-               + `${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
+               + `${team.name}总分${scoreToSpeech(total)}`;
   } else if (!correct) {
-    resultText = `回答错误。${correctSpeech}。${memberName}个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
+    resultText = `回答错误。${correctSpeech}。${team.name}总分${scoreToSpeech(total)}`;
   } else if (event.capped) {
-    // 队伍已封顶：个人分照记，但队伍分不再增长。必须说清楚，否则台下会以为漏计分
-    resultText = `回答正确，${memberName}个人累计${scoreToSpeech(memberScore)}，`
-               + `${team.name}本环节已达上限${scoreToSpeech(teamScore)}，本题不再加分，总分${scoreToSpeech(total)}`;
+    // 队伍已封顶：个人分后台照记，但队伍分不再增长。必须说清楚，否则台下会以为漏计分
+    resultText = `回答正确，${team.name}本环节已达上限，本题不再加分，总分${scoreToSpeech(total)}`;
   } else {
-    resultText = `回答正确，${memberName}得${scoreToSpeech(event.delta)}，个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
+    resultText = `回答正确，${memberName}得到${scoreToSpeech(event.delta)}，${team.name}总分${scoreToSpeech(total)}`;
   }
   // 播报完成后自动切下一位。onend 在 TTS 关闭/失败时也会立即回调，故两种情况都能推进。
   speak(resultText, { onend: r1ScheduleAutoAdvance });
@@ -1661,12 +1734,6 @@ function doFlipCard(id) {
       state.r1.currentQIdx = idx;
       if (!state.r1.usedQIds.includes(card.qId)) state.r1.usedQIds.push(card.qId);
     }
-  } else if (round === 2 && card.qId != null) {
-    const idx = state.questions.findIndex(q => q.id === card.qId);
-    if (idx >= 0) {
-      state.r2.currentQIdx = idx;
-      if (!state.r2.usedQIds.includes(card.qId)) state.r2.usedQIds.push(card.qId);
-    }
   } else if (round === 4 && card.imageKey != null) {
     const idx = state.questions.findIndex(q => q.imageKey === card.imageKey);
     if (idx >= 0) {
@@ -1686,7 +1753,7 @@ function doFlipCard(id) {
     if (round === 1) {
       if (state.tts.autoRead) r1ReadQ(); else { startTimer(state.r1.timerSec*1000, 1); cdSpoken.clear(); }
     } else if (round === 2) {
-      if (state.tts.autoRead) r2ReadQ(); else { startTimer(state.r2.timerSec*1000, 2); cdSpoken.clear(); }
+      r2BeginTurn();   // 翻牌上场 → 开始本队整轮（内部读题+计时）
     } else if (round === 4) {
       startTimer(state.r4.timerSec*1000, 4); cdSpoken.clear();
     }
@@ -1694,51 +1761,153 @@ function doFlipCard(id) {
   }, 1500);
 }
 
-// ── R2 团队共答 ───────────────────────────────────
+// ── R2 团队共答（按抽签顺序逐队上场，每队答完整一轮题）────────
+// 判分体验与个人必答一致（点选项两段式揭晓），但：
+//   · 不选队员计分 —— 队员仅供屏幕显示/语音，分只记在队伍头上
+//   · 每题语音只播「本题对错 + 得分」；整轮答完再播该队小结
+const R2_REVEAL_DELAY = 400;   // 与 R1 一致：先亮选手所选（错=红），停顿后揭晓
+let _r2RevealTimer = null;
+function r2CancelReveal() {
+  if (_r2RevealTimer) { clearTimeout(_r2RevealTimer); _r2RevealTimer = null; }
+}
+
 function r2Init() {
-  if (!requireReady(2, { needDraw:false })) return;   // R2 五队同答，不依赖出场顺序
+  if (!requireReady(2, { needDraw:true })) return;   // 现按赛前抽签顺序逐队上场
+  if (state.roundRulesDismissed) delete state.roundRulesDismissed[2];  // 规则重新展示朗读
   initR2(); switchPanel(2);
   if (!initCardDeck(2)) { alert('翻牌牌组生成失败。请检查「翻牌选题」是否被关闭。'); return; }
   render();
 }
+function r2SetMem(i) { state.r2.currentMemberIdx = i; save(); render(); }
+// 提交前校验：必须先选答题队员，否则提示并拦下
+function r2RequireMember() {
+  if (state.r2.currentMemberIdx == null) {
+    alert('请先选择答题队员，再提交答案。');
+    return false;
+  }
+  return true;
+}
+// 填空题提交（无选项可点，直接判对/判错）——同样先校验队员
+function r2SubmitFill(correct) {
+  if (!r2RequireMember()) return;
+  doR2(correct);
+}
 function r2ReadQ() {
   if (state.r2.currentQIdx == null) return;
-  speakQueue(buildQuestionSegments(state.questions[state.r2.currentQIdx]), () => {
+  // 读完题末尾追加「开始答题」，播完这句才起倒计时
+  speakQueue([...buildQuestionSegments(state.questions[state.r2.currentQIdx]), '开始答题'], () => {
     startTimer(state.r2.timerSec * 1000, 2);
     cdSpoken.clear();
   });
 }
-function r2StartTimer() { startTimer(state.r2.timerSec*1000, 2); cdSpoken.clear(); }
-function r2Next() {
-  state.r2.currentQIdx = null;
-  state.showAnswerOnDisplay  = false;
-  state.showScoresOnDisplay  = false;
+
+// 翻牌上场后：装载本队一轮题，展示并读第 1 题
+function r2BeginTurn() {
+  r2StartTurn();                       // shared.js：turnQIdxs / qNum=0 / currentQIdx
+  state.r2.currentMemberIdx = null;    // 每题必须重新选队员
+  state.pickedAnswer = null;
+  state.showAnswerOnDisplay = false;
+  state.showScoresOnDisplay = false;
+  state.displayMode = 'question';
+  save(); render();
+  if (state.tts.autoRead) r2ReadQ();
+  else { startTimer(state.r2.timerSec*1000, 2); cdSpoken.clear(); }
+}
+
+// 本题判分（多选点选项经 autoJudge→两段式后调用；填空/超时走「判对/判错」按钮）
+function doR2(correct) {
+  r2CancelReveal();
+  const event = r2ScoreCurrent(correct);   // shared.js：记队伍分 + turnResults
+  if (!event) return alert('请先翻牌上场');
+  stopTimer(); cdSpoken.clear();
+  state.showAnswerOnDisplay = true;        // 揭晓正确答案（大屏标绿/显示答案）
+  state.showScoresOnDisplay = true;
+  save(); render();
+  // 语音：只播本题对错 + 得分
+  const q = state.r2.currentQIdx != null ? state.questions[state.r2.currentQIdx] : null;
+  const text = correct
+    ? `回答正确，得到${scoreToSpeech(event.delta)}`
+    : `回答错误，不得分。${r2CorrectSpeech(q)}`;
+  speak(text, { onend: r2AfterQuestion });
+}
+
+// 拼「正确答案是…」（多选念字母+选项；填空念各空答案）
+function r2CorrectSpeech(q) {
+  if (!q) return '';
+  if (q.type === 'fill_multi' && q.blanks?.length) {
+    return '正确答案是' + q.blanks.map((b,i)=>`第${i+1}空${b.answer||b.hint||''}`).join('，');
+  }
+  if (q.answer) {
+    const letters = Array.isArray(q.answer) ? q.answer.join('') : String(q.answer);
+    const arr = Array.isArray(q.answer) ? q.answer : [q.answer];
+    const texts = arr.map(l => q.options?.['ABCDE'.indexOf(l)]).filter(Boolean).join('、');
+    return `正确答案是${letters}${texts ? '，' + texts : ''}`;
+  }
+  return '';
+}
+
+// 一题播报完 → 进入本队下一题；若已答完整轮 → 小结播报
+function r2AfterQuestion() {
+  if (state.currentRound !== 2) return;
+  state.r2.qNum++;
+  if (state.r2.qNum < (state.r2.turnQIdxs?.length || 0)) {
+    state.r2.currentQIdx = state.r2.turnQIdxs[state.r2.qNum];
+    state.r2.currentMemberIdx = null;   // 下一题重新选队员
+    state.pickedAnswer = null;
+    state.showAnswerOnDisplay = false;
+    state.showScoresOnDisplay = false;
+    save(); render();
+    if (state.tts.autoRead) r2ReadQ();
+    else { startTimer(state.r2.timerSec*1000, 2); cdSpoken.clear(); }
+  } else {
+    r2TurnSummary();
+  }
+}
+
+// 本队整轮答完 → 播报小结 → 轮到下一队
+function r2TurnSummary() {
+  const team = getTeam(state.draw.teamOrder[state.r2.currentTeamIdx]);
+  stopTimer();
+  const results = state.r2.turnResults || [];
+  const correctCount = results.filter(r => r.correct).length;
+  const wrongCount   = results.length - correctCount;
+  const turnScore    = results.reduce((s, r) => s + (r.delta || 0), 0);
+  const total        = team ? teamTotal(team) : 0;
+  state.showScoresOnDisplay = true;
+  save(); render();
+  const text = `${team ? team.name : '本队'}答对${correctCount}道，答错${wrongCount}道，`
+             + `得到${scoreToSpeech(turnScore)}，总分${scoreToSpeech(total)}`;
+  speak(text, { onend: r2NextTeam });
+}
+
+function r2NextTeam() {
+  if (state.currentRound !== 2) return;
+  const order = state.draw.teamOrder;
+  state.r2.currentTeamIdx++;
+  if (state.r2.currentTeamIdx >= order.length) {
+    state.r2.currentQIdx = null;
+    state.displayMode = 'question';   // 无题 → 大屏回赛前背景
+    save(); render();
+    alert('团队共答全部完成！');
+    return;
+  }
+  // 下一队：回翻牌，等该队上场
+  state.r2.currentMemberIdx = null;
+  state.r2.turnQIdxs        = [];
+  state.r2.qNum             = 0;
+  state.r2.turnResults      = [];
+  state.r2.currentQIdx      = null;
+  state.pickedAnswer         = null;
+  state.showAnswerOnDisplay = false;
   state.displayMode = 'cardflip';
   state.cardFlip.flipPulse++;
   save(); render();
-}
-function doR2Score(teamId, correct) {
-  const q = state.r2.currentQIdx != null ? state.questions[state.r2.currentQIdx] : null;
-  const team = state.teams.find(t=>t.id===teamId);
-  if (!team || !q) return;
-  const delta  = correct ? (q.score_correct ?? 5) : 0;
-  const actual = applyTeamScore(teamId, 'r2', delta);
-  const event = { round:2, teamId, teamName:team.name, correct, delta:actual, reason:correct?'correct':'wrong', qId:q.id, ts:Date.now() };
-  logEvent(event);
-  state.showScoresOnDisplay = true;
-  save(); render();
-  // TTS 播报
-  const teamScore = team.scores.r2 || 0;
-  const total = teamTotal(team);
-  const text = correct
-    ? `${team.name}回答正确，得${scoreToSpeech(actual)}，本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`
-    : `${team.name}回答错误`;
-  speak(text);
 }
 
 // ── R3 擂台抢答 ───────────────────────────────────
 function r3Init() {
   if (!requireReady(3, { needDraw:false })) return;   // R3 抢答，不依赖出场顺序
+  if (state.roundRulesDismissed) delete state.roundRulesDismissed[3];  // 规则重新展示朗读
   initR3(); switchPanel(3); render();
 }
 function r3StartQ() {
@@ -1765,12 +1934,10 @@ function doR3(correct) {
   // TTS 播报成绩
   const team = state.teams.find(t => t.id === ev.teamId);
   const memberName = ev.memberName || `队员${ev.memberIdx+1}`;
-  const memberScore = team.memberScores[ev.memberIdx] || 0;
-  const teamScore = team.scores.r3 || 0;
   const total = teamTotal(team);
   const resultText = correct
-    ? `回答正确，${memberName}加${scoreToSpeech(Math.abs(ev.delta))}，个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`
-    : `回答错误，${memberName}扣${scoreToSpeech(Math.abs(ev.delta))}，个人累计${scoreToSpeech(memberScore)}，${team.name}本环节${scoreToSpeech(teamScore)}，总分${scoreToSpeech(total)}`;
+    ? `回答正确，${memberName}加${scoreToSpeech(Math.abs(ev.delta))}，${team.name}总分${scoreToSpeech(total)}`
+    : `回答错误，${memberName}扣${scoreToSpeech(Math.abs(ev.delta))}，${team.name}总分${scoreToSpeech(total)}`;
   speak(resultText);
 }
 function doR3Supp() { r3OpenSupplement(); render(); }
@@ -1794,6 +1961,7 @@ function r4Init() {
     switchPanel(0);
     return;
   }
+  if (state.roundRulesDismissed) delete state.roundRulesDismissed[4];  // 规则重新展示朗读
   initR4(); switchPanel(4);
   if (!initCardDeck(4)) { alert('翻牌牌组生成失败。请检查「翻牌选题」是否被关闭。'); return; }
   render();
@@ -1856,11 +2024,12 @@ function doR4Score() {
   save(); render();
   const team = state.teams.find(t => t.id === ev.teamId);
   const total = team ? teamTotal(team) : 0;
-  speak(`${ev.teamName}，识图找茬，得${scoreToSpeech(ev.delta)}，总分${scoreToSpeech(total)}`);
+  speak(`${ev.teamName}，识图找茬，得到${scoreToSpeech(ev.delta)}，总分${scoreToSpeech(total)}`);
 }
 // ── R5 飞花令 ────────────────────────────────────
 function r5Init() {
   if (!requireReady(5)) return;
+  if (state.roundRulesDismissed) delete state.roundRulesDismissed[5];  // 规则重新展示朗读
   initR5(); switchPanel(5); render();
 }
 function r5SetTheme(i) { r5StartTheme(i); startTimer(state.r5.timerSec*1000, 5); cdSpoken.clear(); render(); }
@@ -2037,7 +2206,10 @@ function openSettings() {
   document.getElementById('s-tts-vol').value     = state.tts.volume ?? 1;
   document.getElementById('s-rate-val').textContent = `×${state.tts.rate||1}`;
   document.getElementById('s-brand').value        = state.brandName || '';
-  document.getElementById('s-rules-1').value       = (state.roundRules && state.roundRules[1] != null) ? state.roundRules[1] : '';
+  for (let rr = 1; rr <= 5; rr++) {
+    const el = document.getElementById('s-rules-' + rr);
+    if (el) el.value = (state.roundRules && state.roundRules[rr] != null) ? state.roundRules[rr] : '';
+  }
   refreshPrepBgUI();
   document.getElementById('s-tts-engine').value  = state.tts.engine || 'auto';
   document.getElementById('s-tts-url').value     = state.tts.serverUrl || '';

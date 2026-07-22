@@ -58,6 +58,10 @@ function defaultState() {
     // 各环节规则说明（大屏翻牌选题时显示在上方窗口）。按环节号存，可自行维护文案。
     roundRules: {
       1: '一、每队选手依次上场，每人作答一题。\n二、主持人翻牌选题，题目当场揭晓。\n三、答对得 2.5 分，答错或超时不得分、不倒扣。\n四、每队本环节累计上限 20 分。\n五、每题限时 15 秒，倒计时结束即停止作答。',
+      2: '一、各队按抽签顺序依次上场，每队翻牌后连答 4 道题。\n二、每题由一名队员作答，作答队员现场指定。\n三、答对每题得 5 分，答错或超时不得分、不倒扣。\n四、每队本环节累计上限 20 分。\n五、每题限时 40 秒。',
+      3: '一、主持人出题并宣布「开始抢答」后，各队方可按抢答器。\n二、最先抢到的队伍作答，答对加 2 分，答错扣 2 分。\n三、抢答犯规（抢答口令前抢按）扣分并暂停一次抢答资格。\n四、本环节不设上限。',
+      4: '一、各队依次上场，在场景图中找出服务不规范之处。\n二、每找对一处得 1 分，每图至多 10 处。\n三、每队本环节累计上限 10 分。\n四、限时结束即停止作答，误报不倒扣。',
+      5: '一、各队围绕主题轮流说出符合要求的服务用语或要点。\n二、每答出一条有效内容得 1 分；本题擂主额外得 3 分。\n三、重复、不符或限时内答不出即淘汰出本题。\n四、本环节不设上限。',
     },
     roundRulesDismissed: {}, // 规则朗读完毕后置 true，大屏据此自动关闭规则窗口
 
@@ -80,10 +84,14 @@ function defaultState() {
 
     // ── 第二环节 团队共答 ────────────────────────
     r2: {
-      currentQIdx: null,
-      usedQIds:    [],
-      timerSec:    40,
-      answers:     {},       // {teamId: 已提交答案}
+      currentTeamIdx:   0,    // 指向 draw.teamOrder（当前上场队，按赛前抽签顺序）
+      currentMemberIdx: 0,    // 后台手动选的答题队员（仅屏幕显示/语音，不计分）
+      turnQIdxs:        [],   // 本队本轮要答的题在 questions[] 的索引（各队同一组）
+      qNum:             0,    // 本轮第几题（0 起）
+      turnResults:      [],   // 本轮每题结果 [{correct, delta}]
+      currentQIdx:      null,
+      usedQIds:         [],
+      timerSec:         40,
     },
 
     // ── 第三环节 擂台抢答 ────────────────────────
@@ -134,6 +142,7 @@ function defaultState() {
     cardFlip: {
       enabled: true,
       rounds:  { 1: true, 2: true, 4: true },   // 哪些环节开启翻牌
+      deckSize: { 1: 40, 2: 0 },        // 每环节翻牌张数（0 = 用全部可用题目）；R4 按队伍数固定
       cards:   [],                      // CardItem[]
       context: {
         round:     null,
@@ -615,9 +624,9 @@ function announceScore(event, callback) {
   }
   let text = '';
   if (reason === 'correct') {
-    text = `${teamName}，答对，得${scoreToSpeech(Math.abs(delta))}`;
+    text = `${teamName}，答对，得到${scoreToSpeech(Math.abs(delta))}`;
   } else if (reason === 'partial') {
-    text = `${teamName}，部分答对，得${scoreToSpeech(Math.abs(delta))}`;
+    text = `${teamName}，部分答对，得到${scoreToSpeech(Math.abs(delta))}`;
   } else if (reason === 'wrong') {
     text = `${teamName}，答错，${delta < 0 ? '扣' + scoreToSpeech(Math.abs(delta)) : '不得分'}`;
   } else if (reason === 'timeout') {
@@ -625,11 +634,11 @@ function announceScore(event, callback) {
   } else if (reason === 'violation') {
     text = `${teamName}，抢答违规，扣${scoreToSpeech(Math.abs(delta))}`;
   } else if (reason === 'spot') {
-    text = `找对一处，得一分`;
+    text = `找对一处，得到一分`;
   } else if (reason === 'flower_valid') {
-    text = `${teamName}，有效，得一分`;
+    text = `${teamName}，有效，得到一分`;
   } else if (reason === 'flower_winner') {
-    text = `${teamName}，本题擂主，额外得三分`;
+    text = `${teamName}，本题擂主，额外得到三分`;
   } else if (reason === 'adjust') {
     text = delta >= 0
       ? `已为${teamName}加${scoreToSpeech(Math.abs(delta))}`
@@ -639,12 +648,18 @@ function announceScore(event, callback) {
   else callback?.();
 }
 
+/** 题干朗读处理：把填空的下划线（两个及以上，含全角）念成「什么」，
+ *  避免 TTS 逐个读成"底线底线"。仅影响朗读，屏幕上题干仍显示下划线。 */
+function stemForSpeech(stem) {
+  return String(stem || '').replace(/[_＿]{2,}/g, '什么');
+}
+
 /** 将题目组装为 TTS 朗读片段 */
 function buildQuestionSegments(q) {
   if (!q) return [];
   const segs = [];
   if (state.tts.readOptions?.readStem !== false) {
-    segs.push(q.stem || '');
+    segs.push(stemForSpeech(q.stem || ''));
   }
   if (state.tts.readOptions?.readOptions && q.options?.length) {
     q.options.forEach((opt, i) => {
@@ -834,6 +849,19 @@ function forceOverrideTeamOrder(newOrder, operator) {
  * 第一环节: 40张问题卡（从 questions 中筛选 r1 类型，随机排列）
  * 第四环节: 5张图题卡（按 draw.teamOrder 对应 r4ImageMap）
  */
+/** 按配置的牌数截取牌池：deckSize<=0 或未配置 → 用全部；否则取前 n 张（不足则全用） */
+function deckSlice(pool, round) {
+  const n = state.cardFlip.deckSize?.[round];
+  return (n && n > 0) ? pool.slice(0, n) : pool;
+}
+/** 设置某环节翻牌张数（0/空 = 用全部）。改完需重新生成牌组才生效。 */
+function setDeckSize(round, n) {
+  if (!state.cardFlip.deckSize) state.cardFlip.deckSize = {};
+  const v = parseInt(n, 10);
+  state.cardFlip.deckSize[round] = (isNaN(v) || v < 0) ? 0 : v;
+  save();
+}
+
 function initCardDeck(round) {
   if (!state.cardFlip.rounds[round]) return false;
   let cards = [];
@@ -843,7 +871,7 @@ function initCardDeck(round) {
   // 主持人在台上完全不知道发生了什么。见函数末尾的守卫。
   if (round === 1) {
     const pool = state.questions.filter(q => q.round === 1);
-    const shuffled = fisherYates(pool).slice(0, 40);
+    const shuffled = deckSlice(fisherYates(pool), round);
     cards = shuffled.map((q, i) => ({
       id:       `r1_${i}`,
       cardNum:  i + 1,
@@ -852,12 +880,11 @@ function initCardDeck(round) {
       used:     false,
     }));
   } else if (round === 2) {
-    const pool = state.questions.filter(q => q.round === 2);
-    const shuffled = fisherYates(pool);
-    cards = shuffled.map((q, i) => ({
-      id:      `r2_${i}`,
-      cardNum: i + 1,
-      qId:     q.id,
+    // R2 每队一张牌（按抽签顺序上场），牌本身不绑题——翻牌后统一答同一组题
+    const n = state.draw.teamOrder.length || state.teams.length;
+    cards = Array.from({ length: n }, (_, i) => ({
+      id:       `r2_${i}`,
+      cardNum:  i + 1,
       revealed: false,
       used:     false,
     }));
@@ -1023,13 +1050,61 @@ function scoreR1(result, note = '') {
 function initR2() {
   state.currentRound = 2;
   state.roundPhase   = 'running';
-  state.r2.currentQIdx = null;
-  state.r2.usedQIds    = [];
-  state.r2.answers     = {};
+  state.r2.currentTeamIdx   = 0;
+  state.r2.currentMemberIdx = null;   // 每题必须手动选队员，默认不选
+  state.r2.turnQIdxs        = [];
+  state.r2.qNum             = 0;
+  state.r2.turnResults      = [];
+  state.r2.currentQIdx      = null;
+  state.r2.usedQIds         = [];
+  state.pickedAnswer         = null;
   state.showAnswerOnDisplay = false;
   state.showScoresOnDisplay = false;
   resetTimer();
   save();
+}
+
+/** 本环节全部团队共答题在 questions[] 的索引（题量少，所有队答同一组） */
+function r2QuestionIdxs() {
+  const idxs = [];
+  state.questions.forEach((q, i) => { if (q.round === 2) idxs.push(i); });
+  return idxs;
+}
+
+/** 开始当前上场队的一轮：装载全部 R2 题，从第 1 题开始 */
+function r2StartTurn() {
+  state.r2.turnQIdxs   = r2QuestionIdxs();
+  state.r2.qNum        = 0;
+  state.r2.turnResults = [];
+  state.r2.currentQIdx = state.r2.turnQIdxs.length ? state.r2.turnQIdxs[0] : null;
+  save();
+}
+
+/**
+ * 给当前上场队的本题判分（只记队伍分，队员不计分）。
+ * correct=true → +q.score_correct（兜底 5，走上限裁剪）；false → 0 分。
+ * 结果推入 turnResults，供整轮小结播报。返回 ScoreEvent。
+ */
+function r2ScoreCurrent(correct) {
+  const teamId = state.draw.teamOrder[state.r2.currentTeamIdx];
+  const team   = getTeam(teamId);
+  if (!team) return null;
+  const qIdx = state.r2.currentQIdx;
+  const q    = qIdx != null ? state.questions[qIdx] : null;
+  const delta  = correct ? (q?.score_correct ?? 5) : 0;
+  const actual = applyTeamScore(teamId, 'r2', delta);
+  const mIdx = state.r2.currentMemberIdx;
+  const event = {
+    round: 2, teamId, teamName: team.name,
+    memberIdx: mIdx,
+    memberName: (mIdx != null ? team.members[mIdx] : '') || '',
+    correct, delta: actual, capped: delta !== actual,
+    reason: correct ? 'correct' : 'wrong',
+    qId: q?.id, ts: Date.now(),
+  };
+  logEvent(event);
+  (state.r2.turnResults = state.r2.turnResults || []).push({ correct, delta: actual });
+  return event;
 }
 
 /**
