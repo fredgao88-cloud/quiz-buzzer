@@ -12,9 +12,11 @@
   --green:#22c55e;--red:#ef4444;--yellow:#f59e0b;--purple:#a855f7;
 }
 html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Microsoft YaHei',system-ui,sans-serif}
+/* 题目背景图：由 JS 设到 body（含压暗层保证文字可读）。未上传时仍是纯深色底。 */
+body{background-position:center;background-size:cover;background-repeat:no-repeat;background-attachment:fixed}
 
 /* ── 顶栏 ── */
-#header{display:flex;align-items:center;gap:14px;padding:10px 24px;background:linear-gradient(135deg,#0a1628,#111f38);border-bottom:1px solid var(--border);height:64px;flex-shrink:0}
+#header{display:flex;align-items:center;gap:14px;padding:10px 24px;background:linear-gradient(135deg,rgba(10,22,40,.82),rgba(17,31,56,.82));border-bottom:1px solid var(--border);height:64px;flex-shrink:0}
 #header .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px;letter-spacing:.5px}
 #header .brand img{height:44px;border-radius:6px;object-fit:contain}
 #header .spacer{flex:1}
@@ -52,7 +54,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 
 /* ── 分数栏 ── */
-#scores-bar{display:none;background:linear-gradient(180deg,#0a1628,#0f1f36);border-top:1px solid var(--border);padding:14px 24px;flex-shrink:0}
+#scores-bar{display:none;background:linear-gradient(180deg,rgba(10,22,40,.85),rgba(15,31,54,.85));border-top:1px solid var(--border);padding:14px 24px;flex-shrink:0}
 #scores-bar.visible{display:block}
 #scores-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
 .score-card{background:var(--surface2);border:2px solid var(--border);border-radius:12px;padding:12px 10px;text-align:center;transition:all .4s}
@@ -63,7 +65,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .score-card .sc-rank{position:absolute;top:6px;right:8px;font-size:12px;font-weight:700}
 
 /* ── 翻牌动画 ── */
-#cardflip-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(160deg,#060e1e,#0a1a32);z-index:5;gap:20px;padding:20px}
+#cardflip-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(160deg,#060e1e,#0a1a32);background-size:cover;background-position:center;z-index:5;gap:20px;padding:20px}
 #cardflip-area.show{display:flex}
 #cf-header{text-align:center}
 #cf-title{font-size:clamp(18px,2.5vw,30px);font-weight:800;color:var(--accent);letter-spacing:1px}
@@ -85,7 +87,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .cf-card.flipped .cf-back{box-shadow:0 0 30px #3b82f666,0 0 60px #3b82f622}
 
 /* ── 抽签动画 ── */
-#draw-area{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:24px;background:var(--bg);z-index:5}
+#draw-area{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:24px;background:var(--bg);background-size:cover;background-position:center;z-index:5}
 #draw-area.show{display:flex}
 .draw-slots-row{display:flex;gap:16px;align-items:center;justify-content:center}
 .draw-slot-d{width:100px;min-height:120px;border-radius:12px;border:3px solid var(--border);background:var(--surface2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:12px}
@@ -93,7 +95,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .draw-slot-d .ds-name{font-size:20px;font-weight:800;text-align:center}
 
 /* ── 飞花令界面 ── */
-#flower-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);z-index:5;padding:32px}
+#flower-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);background-size:cover;background-position:center;z-index:5;padding:32px}
 #flower-area.show{display:flex}
 #flower-theme{font-size:clamp(24px,3vw,40px);font-weight:800;color:var(--accent);margin-bottom:8px;letter-spacing:1px}
 #flower-turn{font-size:clamp(20px,2.5vw,32px);font-weight:700;padding:14px 40px;border-radius:14px;border:3px solid var(--green);color:var(--green);background:#14532d22;animation:pulse-glow-g 1.2s ease-in-out infinite}
@@ -205,6 +207,7 @@ function fmtMs(ms) {
 
 // ── 主渲染 ──────────────────────────────────────
 function render() {
+  updateQuestionBg();
   updateRulesWindow();
   updatePrepCover();
   updateHeader();
@@ -231,6 +234,25 @@ function render() {
   // 分数栏
   if (state.showScoresOnDisplay) {
     updateScoresGrid();
+  }
+}
+
+// ── 题目背景图 ────────────────────────────────────
+// 铺在整个大屏底层（出题/翻牌/抽签/飞花令都能透出）。叠一层压暗，
+// 保证浅色题干在图片亮部仍然清晰。未上传则回到默认深色底。
+function updateQuestionBg() {
+  const img = state.questionBg;
+  // 翻牌/抽签/飞花令是【不透明】覆盖层（要遮住上一题的残留内容），
+  // 所以底图得单独铺到它们身上，不能只铺 body。
+  const layers = ['cardflip-area', 'draw-area', 'flower-area'];
+  if (img) {
+    const bg = `linear-gradient(rgba(5,13,26,.55),rgba(5,13,26,.55)), url("${img}")`;
+    document.body.style.backgroundImage = bg;
+    layers.forEach(id => { const el = document.getElementById(id); if (el) el.style.backgroundImage = bg; });
+  } else {
+    // 清掉内联样式，回落到 CSS 里的默认深色底
+    document.body.style.backgroundImage = '';
+    layers.forEach(id => { const el = document.getElementById(id); if (el) el.style.backgroundImage = ''; });
   }
 }
 

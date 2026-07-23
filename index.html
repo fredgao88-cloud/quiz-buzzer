@@ -495,12 +495,24 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
       </div>
       <div class="row" style="margin-top:10px;align-items:flex-start">
         <div>
-          <label>赛前背景图（大屏整屏铺满）</label>
+          <label>赛前背景图（空场时整屏铺满）</label>
           <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
             <button class="btn-ghost btn-sm" onclick="document.getElementById('prepbg-file').click()">上传</button>
             <button class="btn-ghost btn-sm" id="prepbg-clear" onclick="clearPrepBg()" style="display:none">清除</button>
             <input type="file" id="prepbg-file" accept="image/*" style="display:none" onchange="loadPrepBg(this)">
             <img id="prepbg-preview" style="display:none;height:44px;border-radius:6px;border:1px solid var(--border,#1e3a5f);object-fit:cover">
+          </div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;align-items:flex-start">
+        <div>
+          <label>题目背景图（出题/翻牌等界面底图）</label>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <button class="btn-ghost btn-sm" onclick="document.getElementById('qbg-file').click()">上传</button>
+            <button class="btn-ghost btn-sm" id="qbg-clear" onclick="clearQuestionBg()" style="display:none">清除</button>
+            <input type="file" id="qbg-file" accept="image/*" style="display:none" onchange="loadQuestionBg(this)">
+            <img id="qbg-preview" style="display:none;height:44px;border-radius:6px;border:1px solid var(--border,#1e3a5f);object-fit:cover">
+            <span style="font-size:11px;color:var(--muted)">留空则用默认深色底</span>
           </div>
         </div>
       </div>
@@ -2229,6 +2241,7 @@ function openSettings() {
     if (el) el.value = (state.roundRules && state.roundRules[rr] != null) ? state.roundRules[rr] : '';
   }
   refreshPrepBgUI();
+  refreshQuestionBgUI();
   document.getElementById('s-tts-engine').value  = state.tts.engine || 'auto';
   document.getElementById('s-tts-url').value     = state.tts.serverUrl || '';
   refreshTTSStatus();
@@ -2332,6 +2345,23 @@ function refreshPrepBgUI() {
   const clr=document.getElementById('prepbg-clear');
   if (!prev) return;
   if (state.prepBg) { prev.src=state.prepBg; prev.style.display=''; clr.style.display=''; }
+  else { prev.removeAttribute('src'); prev.style.display='none'; clr.style.display='none'; }
+}
+function loadQuestionBg(input) {
+  const f=input.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=e=>{setQuestionBg(e.target.result);refreshQuestionBgUI();render();};
+  r.readAsDataURL(f);
+  input.value='';
+}
+function clearQuestionBg() {
+  setQuestionBg(null); refreshQuestionBgUI(); render();
+}
+function refreshQuestionBgUI() {
+  const prev=document.getElementById('qbg-preview');
+  const clr=document.getElementById('qbg-clear');
+  if (!prev) return;
+  if (state.questionBg) { prev.src=state.questionBg; prev.style.display=''; clr.style.display=''; }
   else { prev.removeAttribute('src'); prev.style.display='none'; clr.style.display='none'; }
 }
 function forceHintClick() {

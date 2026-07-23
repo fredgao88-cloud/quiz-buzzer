@@ -55,6 +55,7 @@ function defaultState() {
     logo: null,
     brandName: '',
     prepBg: null,            // 赛前准备大屏背景图（整屏铺满）
+    questionBg: null,        // 题目页大屏背景图（出题/翻牌/抽签等界面的底图）
     // 各环节规则说明（大屏翻牌选题时显示在上方窗口）。按环节号存，可自行维护文案。
     roundRules: {
       1: '一、每队选手依次上场，每人作答一题。\n二、主持人翻牌选题，题目当场揭晓。\n三、答对得 2.5 分，答错或超时不得分、不倒扣。\n四、每队本环节累计上限 20 分。\n五、每题限时 15 秒，倒计时结束即停止作答。',
@@ -1776,6 +1777,7 @@ function loadQuestions(data) {
 function setLogo(dataUrl) { state.logo = dataUrl; save(); }
 function setBrandName(name) { state.brandName = name || ''; save(); }
 function setPrepBg(dataUrl) { state.prepBg = dataUrl || null; save(); }
+function setQuestionBg(dataUrl) { state.questionBg = dataUrl || null; save(); }
 function setRoundRules(round, text) {
   if (!state.roundRules) state.roundRules = {};
   state.roundRules[round] = text || '';
