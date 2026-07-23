@@ -1636,6 +1636,8 @@ function r5Eliminate(teamId) {
 function r5SetWinner(teamId) {
   const team = getTeam(teamId);
   if (!team) return null;
+  // 本令题已有擂主则不重复加分（防手动指定与"剩一队自动定擂主"重复触发）
+  if ((state.r5.themeWinners || []).some(w => w.themeIdx === state.r5.currentThemeIdx)) return null;
   applyTeamScore(team.id, 'r5', 3);
   state.r5.themeWinners.push({ themeIdx: state.r5.currentThemeIdx, teamId });
   const event = {

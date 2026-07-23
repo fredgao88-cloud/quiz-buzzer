@@ -1256,6 +1256,7 @@ function submitMultiSel(elId) {
 // 点选项后揭晓正确答案前的停顿（毫秒）：先让观众看清选手选的（错则红），再揭晓
 const REVEAL_DELAY = 400;
 let _r1RevealTimer = null;
+let _r1Locked = false;   // 本题判分锁：判过一次后拦住重复判分，直到下一位/翻新牌
 function r1CancelReveal() {
   if (_r1RevealTimer) { clearTimeout(_r1RevealTimer); _r1RevealTimer = null; }
 }
@@ -1263,7 +1264,7 @@ function r1CancelReveal() {
 function autoJudge(elId, selected) {
   const selKey = `_sel_${elId}`;
   if (elId === 'r1-q-box') {
-    if (_r1RevealTimer) return;          // 揭晓窗口内忽略重复点击，防止重复判分
+    if (_r1RevealTimer || _r1Locked) return;   // 揭晓/已判本题内忽略重复点击
     const q = state.r1.currentQIdx != null ? state.questions[state.r1.currentQIdx] : null;
     if (!q) return;
     const correct = checkAnswer(q, selected);
@@ -1282,7 +1283,7 @@ function autoJudge(elId, selected) {
       if (state.currentRound === 1) doR1(correct);
     }, REVEAL_DELAY);
   } else if (elId === 'r2-q-box') {
-    if (_r2RevealTimer) return;          // 揭晓窗口内忽略重复点击
+    if (_r2RevealTimer || _r2Locked) return;   // 揭晓/已判本题内忽略重复提交
     if (!r2RequireMember()) return;      // 未选队员：提示并拦下，保留已选选项
     const q = state.r2.currentQIdx != null ? state.questions[state.r2.currentQIdx] : null;
     if (!q) return;
@@ -1544,6 +1545,7 @@ function r1Init() {
   if (!requireReady(1)) return;
   // 重开本环节 → 规则窗口重新展示并朗读（清掉「已读」标记，让下面的响应式播报重新触发）
   if (state.roundRulesDismissed) delete state.roundRulesDismissed[1];
+  _r1Locked = false;
   initR1();
   switchPanel(1);
   if (!initCardDeck(1)) {
@@ -1633,6 +1635,7 @@ function r1ReadQ() {
 function r1NextAnswerer() {
   r1CancelAutoAdvance();                 // 手动推进则取消待触发的自动切换，避免跳两位
   r1CancelReveal();                      // 也撤掉可能挂着的揭晓定时器
+  _r1Locked = false;                     // 下一位解锁
   const order = state.draw.teamOrder;
   let tIdx = state.r1.currentTeamIdx;
   let mIdx = state.r1.currentMemberIdx + 1;
@@ -1663,9 +1666,11 @@ function doR1Violation() {
 }
 
 function doR1(result, note = '') {
+  if (_r1Locked) return;   // 防重复判分（快速双击 / 揭晓间隔内再点）
   r1CancelReveal();   // 若揭晓定时器还挂着（手动按钮抢在其前面），撤掉以免重复判分
   const event = scoreR1(result, note);
   if (!event) return alert('请先选择答题队员');
+  _r1Locked = true;
   stopTimer(); cdSpoken.clear();
   // 显示答案和分数
   state.showAnswerOnDisplay = true;
@@ -1731,12 +1736,14 @@ function doFlipCard(id) {
   if (round === 1 && card.qId != null) {
     const idx = state.questions.findIndex(q => q.id === card.qId);
     if (idx >= 0) {
+      _r1Locked = false;   // 翻出新题，解锁判分
       state.r1.currentQIdx = idx;
       if (!state.r1.usedQIds.includes(card.qId)) state.r1.usedQIds.push(card.qId);
     }
   } else if (round === 4 && card.imageKey != null) {
     const idx = state.questions.findIndex(q => q.imageKey === card.imageKey);
     if (idx >= 0) {
+      _r4Locked = false;   // 翻出新图，解锁判分
       state.r4.currentQIdx = idx;
       state.r4.spotJudge = {};
       state.r4.extraSpots = [];
@@ -1767,6 +1774,7 @@ function doFlipCard(id) {
 //   · 每题语音只播「本题对错 + 得分」；整轮答完再播该队小结
 const R2_REVEAL_DELAY = 400;   // 与 R1 一致：先亮选手所选（错=红），停顿后揭晓
 let _r2RevealTimer = null;
+let _r2Locked = false;   // 本题判分锁：判过一次后拦住重复提交，直到进入下一题
 function r2CancelReveal() {
   if (_r2RevealTimer) { clearTimeout(_r2RevealTimer); _r2RevealTimer = null; }
 }
@@ -1789,6 +1797,7 @@ function r2RequireMember() {
 }
 // 填空题提交（无选项可点，直接判对/判错）——同样先校验队员
 function r2SubmitFill(correct) {
+  if (_r2Locked) return;             // 本题已判，拦住重复提交
   if (!r2RequireMember()) return;
   doR2(correct);
 }
@@ -1804,6 +1813,7 @@ function r2ReadQ() {
 // 翻牌上场后：装载本队一轮题，展示并读第 1 题
 function r2BeginTurn() {
   r2StartTurn();                       // shared.js：turnQIdxs / qNum=0 / currentQIdx
+  _r2Locked = false;                   // 新题解锁
   state.r2.currentMemberIdx = null;    // 每题必须重新选队员
   state.pickedAnswer = null;
   state.showAnswerOnDisplay = false;
@@ -1816,9 +1826,11 @@ function r2BeginTurn() {
 
 // 本题判分（多选点选项经 autoJudge→两段式后调用；填空/超时走「判对/判错」按钮）
 function doR2(correct) {
+  if (_r2Locked) return;                    // 防重复判分（快速双击/揭晓间隔内再点）
+  _r2Locked = true;
   r2CancelReveal();
   const event = r2ScoreCurrent(correct);   // shared.js：记队伍分 + turnResults
-  if (!event) return alert('请先翻牌上场');
+  if (!event) { _r2Locked = false; return alert('请先翻牌上场'); }
   stopTimer(); cdSpoken.clear();
   state.showAnswerOnDisplay = true;        // 揭晓正确答案（大屏标绿/显示答案）
   state.showScoresOnDisplay = true;
@@ -1852,6 +1864,7 @@ function r2AfterQuestion() {
   state.r2.qNum++;
   if (state.r2.qNum < (state.r2.turnQIdxs?.length || 0)) {
     state.r2.currentQIdx = state.r2.turnQIdxs[state.r2.qNum];
+    _r2Locked = false;                  // 新题解锁
     state.r2.currentMemberIdx = null;   // 下一题重新选队员
     state.pickedAnswer = null;
     state.showAnswerOnDisplay = false;
@@ -1968,6 +1981,7 @@ function r4Init() {
 }
 function r4Prev() {
   if (state.r4.currentTeamIdx > 0) {
+    _r4Locked = false;
     state.r4.currentTeamIdx--;
     state.r4.currentQIdx = null;
     state.r4.spotJudge = {};
@@ -1979,6 +1993,7 @@ function r4Prev() {
 }
 function r4Next() {
   if (state.r4.currentTeamIdx < 4) {
+    _r4Locked = false;
     state.r4.currentTeamIdx++;
     state.r4.currentQIdx = null;
     state.r4.spotJudge = {};
@@ -2016,9 +2031,12 @@ function r4DelExtra(i) {
   if (!confirm(`删除额外认定点「${state.r4.extraSpots[i]?.desc || ''}」？`)) return;
   r4RemoveExtraSpot(i); render();
 }
+let _r4Locked = false;   // 本队判分锁：判过一次后拦住重复判分，直到切队/翻新牌
 function doR4Score() {
+  if (_r4Locked) return;                 // 防重复判分（快速双击）
   const ev = scoreR4(state.r4.currentTeamIdx);
   if (!ev) return;
+  _r4Locked = true;
   stopTimer(); cdSpoken.clear();
   state.showScoresOnDisplay = true;
   save(); render();
