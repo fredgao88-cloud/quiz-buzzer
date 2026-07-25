@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import socket
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -197,6 +198,18 @@ def prewarm(req: PrewarmReq):
     }
 
 
+def _lan_ip() -> str:
+    """猜本机局域网 IP：不发包，只借 UDP socket 问内核走哪张网卡。取不到就回退 127.0.0.1。"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
 def main() -> None:
     global engine
     prefer = os.environ.get("RZ_TTS_ENGINE", "")
@@ -212,9 +225,11 @@ def main() -> None:
             "    pip install ChatTTS torch # 离线，音质最好，建议 GPU\n"
             "    pip install pyttsx3       # 离线兜底，音质一般\n"
         )
+    ip = _lan_ip()
     print(f"[tts] 引擎: {engine.name}   端口: {PORT}   缓存: {CACHE_DIR}", flush=True)
-    print(f"[tts] 健康检查: http://127.0.0.1:{PORT}/api/health", flush=True)
-    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
+    print(f"[tts] 本机健康检查: http://127.0.0.1:{PORT}/api/health", flush=True)
+    print(f"[tts] 局域网访问地址: http://{ip}:{PORT}  ← 控制台「设置→TTS→服务地址」要填这个", flush=True)
+    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
 
 
 if __name__ == "__main__":
