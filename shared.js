@@ -93,7 +93,8 @@ function defaultState() {
       currentMemberIdx: 0,   // 0-3
       currentQIdx:     null, // 当前题目在 questions[] 中的索引
       usedQIds:        [],   // 已用题目 id
-      timerSec:        15,
+      timerSec:        15,   // 答题倒计时
+      flipTimerSec:    10,   // 翻牌倒计时：报完「请某某翻牌」后开始，0=不计时
       autoAdvance:     true, // 判分播报完后自动切到下一位答题人
       turnQIds:        [],   // 当前这次翻牌抽到的题目 id，按 roundCfg[1].types 顺序排列
       turnSubIdx:      0,    // 当前答到 turnQIds 里的第几题（0-based）

@@ -256,7 +256,8 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
       <button class="btn-primary" onclick="r1Init()">开始本环节</button>
       <button class="btn-warn btn-sm" onclick="r1ReadQ()">朗读题目</button>
       <button class="btn-primary btn-sm" onclick="r1NextAnswerer()">下一位</button>
-      <label style="display:inline-flex;align-items:center;gap:3px;margin:0">倒计时<input type="number" id="r1-timer-sec" value="15" min="5" max="120" style="width:50px" onchange="state.r1.timerSec=+this.value;save()">秒</label>
+      <label style="display:inline-flex;align-items:center;gap:3px;margin:0" title="每道题的作答倒计时">答题<input type="number" id="r1-timer-sec" value="15" min="5" max="120" style="width:50px" onchange="state.r1.timerSec=+this.value;save()">秒</label>
+      <label style="display:inline-flex;align-items:center;gap:3px;margin:0" title="报完「请某某翻牌」后开始的翻牌倒计时，0=不计时">翻牌<input type="number" id="r1-flip-timer-sec" value="10" min="0" max="120" style="width:50px" onchange="state.r1.flipTimerSec=+this.value;save()">秒</label>
       <label style="display:inline-flex;align-items:center;gap:4px;margin:0;font-size:12px" title="判分播报完后自动切到下一位答题人">
         <input type="checkbox" id="r1-auto-advance" onchange="r1SetAutoAdvance(this.checked)">判分后自动下一位</label>
       <span id="r1-progress" style="color:var(--muted);font-size:12px"></span>
@@ -816,9 +817,11 @@ function renderTimer() {
 function onTimerExpired(round) {
   switch (round) {
     case 1:
-      // 个人必答超时：0 分（等同答错），播完提示后自动落分
       if (state.r1.currentQIdx != null) {
+        // 答题超时：0 分（等同答错），播完提示后自动落分
         speakQueue(['时间到，作答超时'], () => doR1(false));
+      } else if (state.displayMode === 'cardflip') {
+        r1FlipTimeout();   // 翻牌超时：本轮不得分，播报后自动轮到下一位
       }
       break;
     case 2:
@@ -1017,6 +1020,7 @@ function renderP1() {
 
   renderRoundScores('r1-scores', 'r1');
   document.getElementById('r1-timer-sec').value = state.r1.timerSec;
+  document.getElementById('r1-flip-timer-sec').value = state.r1.flipTimerSec ?? 10;
   document.getElementById('r1-auto-advance').checked = state.r1.autoAdvance !== false;
 }
 
@@ -1633,6 +1637,7 @@ function r1Init() {
   // 重开本环节 → 规则窗口重新展示并朗读（清掉「已读」标记，让下面的响应式播报重新触发）
   if (state.roundRulesDismissed) delete state.roundRulesDismissed[1];
   _r1Locked = false;
+  _r1LastFlipPrompt = null;   // 重开本环节 → 第一位选手的翻牌提示要重新报
   initR1();
   switchPanel(1);
   if (!initCardDeck(1)) {
@@ -1727,12 +1732,96 @@ function announceRulesIfNeeded() {
   }
 }
 function r1SetMem(i) { state.r1.currentMemberIdx = i; save(); render(); }
+// ── R1 翻牌前报「请某队某某某翻牌」──────────────────
+// 做成响应式（同 announceRulesIfNeeded）：不论是开始本环节、判分后自动换人、
+// 还是主持人手动改答题队员，只要进入「等待翻牌」状态就报一次。
+// 同一位选手只报一次，靠 队id_队员序号 当闸门，避免每次 render 都念。
+let _r1LastFlipPrompt = null;
+function r1AnnounceFlipPromptIfNeeded() {
+  if (!window.IS_CONTROL) return;
+  if (state.currentRound !== 1) { _r1LastFlipPrompt = null; return; }
+  // 只在「牌已发出、还没翻」时报；已经翻出题目了就不报
+  if (state.displayMode !== 'cardflip' || state.r1.currentQIdx != null) return;
+  if (!state.cardFlip.cards?.length || state.cardFlip.context?.round !== 1) return;
+  // 本环节配了规则、但规则还没念完 → 不抢麦，等 close() 置 dismissed=true 后本函数会被再次触发
+  const hasRules = !!String(state.roundRules?.[1] ?? '').trim();
+  if (hasRules && state.roundRulesDismissed?.[1] !== true) return;
+
+  const team = getTeamByIdx(state.r1.currentTeamIdx);
+  if (!team) return;
+  const mIdx = state.r1.currentMemberIdx;
+  const key  = `${team.id}_${mIdx}`;
+  if (_r1LastFlipPrompt === key) return;
+  _r1LastFlipPrompt = key;
+  const memberName = team.members[mIdx] || `队员${mIdx + 1}`;
+  // 延后一拍：规则朗读的 close() 那条调用栈里刚发生过 cancel，紧接着 speak
+  // 会命中 Chrome「cancel 紧跟 speak 一起被打断」的老 bug，脱离该栈后再播才稳
+  setTimeout(() => {
+    speak(`请${team.name}${memberName}翻牌`, {
+      // 报完这句才起翻牌倒计时（TTS 关闭/失败时 onend 也会立即回调，所以两种情况都能起）
+      onend: () => {
+        const sec = state.r1.flipTimerSec;
+        if (!(sec > 0)) return;                                  // 设 0 = 不给翻牌计时
+        if (state.currentRound !== 1) return;                    // 期间已切走环节
+        if (state.displayMode !== 'cardflip') return;            // 已经翻牌出题了
+        if (state.r1.currentQIdx != null) return;
+        startTimer(sec * 1000, 1);
+        cdSpoken.clear();
+      },
+    });
+  }, 150);
+}
+
+/**
+ * 翻牌超时：本轮判 0 分并记流水，播报后自动轮到下一位选手。
+ *
+ * 记流水时不带 qId —— 选手压根没翻牌，这一轮一道题都没出，
+ * 不能挂到某道具体题目上，否则赛后核对会看到「答错了一道没出过的题」。
+ */
+function r1FlipTimeout() {
+  const team = getTeamByIdx(state.r1.currentTeamIdx);
+  if (!team) { render(); return; }
+  const mIdx       = state.r1.currentMemberIdx;
+  const memberName = team.members[mIdx] || `队员${mIdx + 1}`;
+  logEvent({
+    round: 1, teamId: team.id, teamName: team.name,
+    memberIdx: mIdx, memberName,
+    correct: false, delta: 0, memberDelta: 0,
+    reason: 'timeout', note: '翻牌超时，本轮不得分',
+    ts: Date.now(),
+  }, true);                       // skipAnnounce：下面自己播，免得双重发声
+  save(); render();
+  speak(`${team.name}${memberName}翻牌超时，本轮不得分`, {
+    // 播完自动换人；换人后「请某某翻牌」由响应式播报接着念，并重新起翻牌倒计时
+    onend: () => { if (state.currentRound === 1) r1NextAnswerer(); },
+  });
+}
+
+/**
+ * 本轮第 N 题的报题前缀，如「第一题，判断题」。
+ * 题型取设置里配的（roundCfg[1].types[本轮第几题]）；配的是「任意题型」时
+ * 报不出有意义的名字，就退回这道题实际的类型。
+ * 只有一题的轮次不报「第一题」，直接报题型，免得啰嗦。
+ */
+function r1QuestionIntro(q) {
+  const cfg = getRoundCfg(1);
+  const i   = state.r1.turnSubIdx ?? 0;
+  const cfgType = cfg.types[i];
+  const type = (!cfgType || cfgType === 'any') ? q?.type : cfgType;
+  const TYPE_SPOKEN = { judge:'判断题', single:'单选题', multi:'多选题', fill:'填空题', fill_multi:'多空填空题' };
+  const typeName = TYPE_SPOKEN[type] || '';
+  const total = state.r1.turnQIds?.length || 0;
+  const pos   = total > 1 ? `第${intToChinese(i + 1)}题` : '';
+  return [pos, typeName].filter(Boolean).join('，');
+}
+
 function r1ReadQ() {
   if (state.r1.currentQIdx == null) return;
   const q = state.questions[state.r1.currentQIdx];
   if (!q) return;
-  // 读完题末尾追加「开始答题」，播完这句才起倒计时
-  speakQueue([...buildQuestionSegments(q), '开始答题'], () => {
+  // 先报「第一题，判断题」，再读题干/选项，末尾「开始答题」，播完这句才起倒计时
+  const intro = r1QuestionIntro(q);
+  speakQueue([intro, ...buildQuestionSegments(q), '开始答题'].filter(Boolean), () => {
     startTimer(state.r1.timerSec * 1000, 1);
     cdSpoken.clear();
   });
@@ -2637,6 +2726,18 @@ function renderDrawCfgEditors() {
         </select>
         <span style="font-size:11px;color:${poolAvailable(t).length?'var(--muted)':'var(--red)'}">池子里可用 ${poolAvailable(t).length} 道</span>
       </div>`).join('');
+    // 倒计时：与各环节面板上的输入框改的是同一个 state 字段，两边同步
+    const timerRow = `<div class="row" style="margin-top:4px">
+      <label>答题倒计时
+        <input type="number" min="3" max="300" style="width:56px" value="${state['r'+r].timerSec}"
+               onchange="setRoundTimerSec(${r},this.value)">
+      </label>
+      ${r === 1 ? `<label>翻牌倒计时
+        <input type="number" min="0" max="120" style="width:56px" value="${state.r1.flipTimerSec ?? 10}"
+               onchange="setR1FlipTimerSec(this.value)">
+      </label>
+      <span style="font-size:11px;color:var(--muted)">报完「请某某翻牌」后开始；0=不计时。超时判本轮 0 分并自动换下一位</span>` : ''}
+    </div>`;
     return `<div style="margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border)">
       <div style="font-weight:700;margin-bottom:4px">${name}</div>
       <div class="row">
@@ -2647,6 +2748,7 @@ function renderDrawCfgEditors() {
         </label>
         <span style="font-size:11px;color:var(--muted)">${turnsHint}</span>
       </div>
+      ${timerRow}
       ${typeRows}
       <div style="font-size:11px;margin-top:4px" id="draw-cfg-hint-${r}"></div>
     </div>`;
@@ -2700,6 +2802,17 @@ function setRoundType(r, i, type) {
   c.types = types;
   save();
   renderDrawCfgEditors();   // 重刷各题型的可用数与轮数提示
+}
+// 倒计时与各环节面板上的输入框共用同一个 state 字段，改哪边都生效
+function setRoundTimerSec(r, v) {
+  const n = Math.max(3, Math.min(300, parseInt(v, 10) || 3));
+  state['r' + r].timerSec = n;
+  save(); render();
+}
+function setR1FlipTimerSec(v) {
+  const n = Math.max(0, Math.min(120, parseInt(v, 10) || 0));
+  state.r1.flipTimerSec = n;
+  save(); render();
 }
 
 // ── R4 场景图上传（图A~图E）────────────────────────
@@ -2775,8 +2888,10 @@ speechSynthesis.onvoiceschanged = () => {
 // ── 共享状态监听 ─────────────────────────────────
 onChange(() => render());
 onChange(announceRulesIfNeeded);   // 进入翻牌选题时自动朗读环节规则并适时关窗
+onChange(r1AnnounceFlipPromptIfNeeded);   // 个人必答：等待翻牌时报「请某队某某某翻牌」
 render();
 announceRulesIfNeeded();           // 覆盖「刷新后已处于翻牌选题」的情形
+r1AnnounceFlipPromptIfNeeded();    // 同上：刷新后若正等着翻牌，补报一次
 
 // ── 题库自动加载 ─────────────────────────────────
 // 题库为空时自动拉取同目录的 questions.json，省去每次手动导入。
