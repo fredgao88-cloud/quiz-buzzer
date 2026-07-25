@@ -67,7 +67,21 @@ function defaultState() {
     roundRulesDismissed: {}, // 规则朗读完毕后置 true，大屏据此自动关闭规则窗口
 
     // ── 题库 ────────────────────────────────────
+    // 扁平题型池：池子里的题【不带 round】，环节不预分配，由各环节按 roundCfg
+    // 随机抽取；抽过的记进 usedQIds，全场（跨环节）不再重复抽。
+    // 识图找茬(spot) / 飞花令(theme) 是单独上传的题源，带 round:4 / round:5，不参与随机抽取。
     questions: [],           // 完整题库数组
+    usedQIds:  [],           // 全场已抽走的题目 id（R1/R2/R3 共用一个池子，互不重复）
+
+    // 各环节抽题配置（翻牌次数 × 每次答几题 × 每题题型），全部在设置面板里改。
+    //   turns   —— 翻几张牌（R2 恒等于队伍数，每队一张，此处不生效）
+    //   perTurn —— 一张牌里连答几题
+    //   types   —— 长度须等于 perTurn，逐题指定题型；'any' = 任意题型随机
+    roundCfg: {
+      1: { turns: 20, perTurn: 3, types: ['judge', 'single', 'fill'] },
+      2: { turns: 5,  perTurn: 4, types: ['multi', 'multi', 'fill_multi', 'fill_multi'] },
+      3: { turns: 25, perTurn: 1, types: ['any'] },
+    },
 
     // ── 赛程控制 ────────────────────────────────
     currentRound: 0,         // 0=赛前, 1-5=对应环节
@@ -81,6 +95,8 @@ function defaultState() {
       usedQIds:        [],   // 已用题目 id
       timerSec:        15,
       autoAdvance:     true, // 判分播报完后自动切到下一位答题人
+      turnQIds:        [],   // 当前这次翻牌抽到的题目 id，按 roundCfg[1].types 顺序排列
+      turnSubIdx:      0,    // 当前答到 turnQIds 里的第几题（0-based）
     },
 
     // ── 第二环节 团队共答 ────────────────────────
@@ -106,7 +122,7 @@ function defaultState() {
       selectedMember:  null,
       buzzPulse:       0,
       lastBuzzTeam:    null,
-      supplementUsed:  false,
+      excludedTeams:   [],   // 本题已抢答过（判错/超时）的队伍 id，防止重复抢答
       currentReadText: '',
     },
 
@@ -143,7 +159,7 @@ function defaultState() {
     cardFlip: {
       enabled: true,
       rounds:  { 1: true, 2: true, 4: true },   // 哪些环节开启翻牌
-      deckSize: { 1: 40, 2: 0 },        // 每环节翻牌张数（0 = 用全部可用题目）；R4 按队伍数固定
+      deckSize: { 1: 20, 2: 0 },        // 每环节翻牌张数（0 = 用全部可用题目）；R1 现在一张牌=一位选手的一轮（含多题），默认 20＝5队×4人；R4 按队伍数固定
       cards:   [],                      // CardItem[]
       context: {
         round:     null,
@@ -155,6 +171,12 @@ function defaultState() {
       flipPulse:       0,   // 自增，触发展示页动画
       lastFlippedCard: null,
     },
+
+    // ── 单卡翻牌（R3/R5 出题前的等待态）──────────
+    // R1/2/4 是「多张牌选一张出题」，R3/R5 题目本就按顺序/主持人选定出，
+    // 不需要选牌，但仍要有「一张牌」的等待画面 + 点【出题】时的翻牌动画，
+    // 与其余环节观感一致。round 标记这张牌属于哪个环节，避免残留状态串场。
+    turnCard: { round: null, revealed: false },
 
     // ── 计时器 ──────────────────────────────────
     timer: {
@@ -184,7 +206,7 @@ function defaultState() {
     // 选手所选的选项字母数组（如 ['B']）。大屏据此高亮：选对=绿、选错=红。
     // 揭晓正确答案（showAnswerOnDisplay）之前先只显示它，实现「先红后揭晓」的两段式。
     pickedAnswer: null,
-    displayMode: 'question',     // question|scores|blank|cardflip|draw
+    displayMode: 'question',     // question|scores|blank|cardflip|draw|turncard
 
     // ── TTS 配置 ────────────────────────────────
     tts: {
@@ -863,6 +885,89 @@ function setDeckSize(round, n) {
   save();
 }
 
+// =====================================================
+// 抽题池（R1/R2/R3 共用）
+// =====================================================
+// 题库是扁平的题型池，不预分配环节。各环节点「开始本环节」时按 roundCfg 随机抽，
+// 抽走的记进 state.usedQIds —— 全场跨环节都不再抽到同一道题。
+// spot/theme 带 round，是单独上传的题源，天然被 round==null 排除在池子外。
+
+/** 环节配置（带兜底，防旧存档缺字段） */
+function getRoundCfg(round) {
+  const d = { 1: { turns: 20, perTurn: 3, types: ['judge','single','fill'] },
+              2: { turns: 5,  perTurn: 4, types: ['multi','multi','fill_multi','fill_multi'] },
+              3: { turns: 25, perTurn: 1, types: ['any'] } }[round]
+           || { turns: 0, perTurn: 1, types: ['any'] };
+  const c = state.roundCfg?.[round] || {};
+  const perTurn = c.perTurn > 0 ? c.perTurn : d.perTurn;
+  const types   = (c.types?.length ? c.types : d.types).slice(0, perTurn);
+  while (types.length < perTurn) types.push('any');      // 配置短了补 any，不让抽题挂掉
+  return { turns: c.turns ?? d.turns, perTurn, types };
+}
+
+/** 可随机抽取的题池（不含 spot/theme 这类单独上传的题源） */
+function poolAll() {
+  return state.questions.filter(q => q.round == null);
+}
+
+/** 池子里某题型还剩几道没被抽走（type='any' = 不限题型） */
+function poolAvailable(type) {
+  const used = new Set(state.usedQIds || []);
+  return poolAll().filter(q => !used.has(q.id) && (type === 'any' || q.type === type));
+}
+
+/**
+ * 按题型清单抽一组题，返回 id 数组；任一题型无题可抽则返回 null（调用方须处理）。
+ * exclude: 本次调用内已占用的 id（同一轮里避免重复抽到同一道）
+ */
+function drawQuestionIds(types, exclude = new Set()) {
+  const picked = [];
+  for (const t of types) {
+    const avail = poolAvailable(t).filter(q => !exclude.has(q.id) && !picked.includes(q.id));
+    if (!avail.length) return null;
+    const q = avail[Math.floor(Math.random() * avail.length)];
+    picked.push(q.id);
+  }
+  return picked;
+}
+
+/** 把题目标记为已抽走（全场不再重复） */
+function markQIdsUsed(qIds) {
+  if (!state.usedQIds) state.usedQIds = [];
+  for (const id of qIds) if (!state.usedQIds.includes(id)) state.usedQIds.push(id);
+}
+
+/**
+ * 释放当前牌组里【还没翻过】的牌所预定的题，让它们回到池子。
+ *
+ * 为什么需要：建牌组时就把题标记成已用（"预定"），否则 R1 的牌还没翻完、
+ * R3 出题就可能抽到躺在 R1 牌里的同一道题。但环节结束/重置牌组时，
+ * 那些始终没被翻开的牌其实一道题都没问过，必须还回池子，不然题库白白损耗。
+ */
+function releaseUnplayedCards() {
+  const cards = state.cardFlip.cards || [];
+  if (!cards.length || !state.usedQIds?.length) return;
+  const release = new Set();
+  for (const c of cards) {
+    if (c.used) continue;                  // 翻过并确认使用了 → 题已问出，保持占用
+    (c.qIds || []).forEach(id => release.add(id));
+  }
+  if (!release.size) return;
+  state.usedQIds = state.usedQIds.filter(id => !release.has(id));
+}
+
+/** 按当前配置，池子最多还能撑起几轮（受最紧缺的那个题型限制） */
+function maxTurnsFor(round) {
+  const { types } = getRoundCfg(round);
+  const uses = {};
+  types.forEach(t => { uses[t] = (uses[t] || 0) + 1; });
+  let maxN = Infinity;
+  for (const t of Object.keys(uses)) {
+    maxN = Math.min(maxN, Math.floor(poolAvailable(t).length / uses[t]));
+  }
+  return isFinite(maxN) ? maxN : 0;
+}
+
 function initCardDeck(round) {
   if (!state.cardFlip.rounds[round]) return false;
   let cards = [];
@@ -870,25 +975,23 @@ function initCardDeck(round) {
   // 空牌组必须【在改动 state 之前】就返回 false —— 否则会造出
   // displayMode='cardflip' 但 cards=[] 的矛盾状态，大屏会静默掉回"等待出题"，
   // 主持人在台上完全不知道发生了什么。见函数末尾的守卫。
-  if (round === 1) {
-    const pool = state.questions.filter(q => q.round === 1);
-    const shuffled = deckSlice(fisherYates(pool), round);
-    cards = shuffled.map((q, i) => ({
-      id:       `r1_${i}`,
-      cardNum:  i + 1,
-      qId:      q.id,
-      revealed: false,
-      used:     false,
-    }));
-  } else if (round === 2) {
-    // R2 每队一张牌（按抽签顺序上场），牌本身不绑题——翻牌后统一答同一组题
-    const n = state.draw.teamOrder.length || state.teams.length;
-    cards = Array.from({ length: n }, (_, i) => ({
-      id:       `r2_${i}`,
-      cardNum:  i + 1,
-      revealed: false,
-      used:     false,
-    }));
+  if (round === 1 || round === 2) {
+    // 一张牌＝一位选手/一支队伍连续作答的一整轮，每轮按 roundCfg[round].types 逐题抽。
+    // 现在从「扁平题型池」里随机抽（不再按 round 过滤），抽走的立刻记进 usedQIds，
+    // 全场跨环节都不会再抽到同一道题。
+    releaseUnplayedCards();   // 旧牌组里没翻过的题先还回池子，避免重置牌组白耗题库
+    const { turns, types } = getRoundCfg(round);
+    // R2 是每队一张牌，张数由队伍数决定，不受 turns 配置影响
+    const want = round === 2
+      ? (state.draw.teamOrder.length || state.teams.length)
+      : (turns > 0 ? turns : maxTurnsFor(round));
+    const taken = new Set();           // 本次建牌已占用的题，避免同一副牌里重复
+    for (let i = 0; i < want; i++) {
+      const qIds = drawQuestionIds(types, taken);
+      if (!qIds) break;                // 池子不够了，能发几张就发几张（调用方会提示）
+      qIds.forEach(id => taken.add(id));
+      cards.push({ id: `r${round}_${i}`, cardNum: i + 1, qIds, revealed: false, used: false });
+    }
   } else if (round === 4) {
     cards = state.draw.teamOrder.map((teamId, i) => ({
       id:       `r4_${i}`,
@@ -903,6 +1006,9 @@ function initCardDeck(round) {
   // 守卫：牌组为空就不进入翻牌模式，且【不改动任何 state】。
   // 调用方必须检查返回值并给出可操作的提示（见 index.html 各 rxInit）。
   if (!cards.length) return false;
+
+  // 预定这副牌用到的题，防止别的环节抽到同一道（没翻的牌之后会被 releaseUnplayedCards 还回去）
+  cards.forEach(c => markQIdsUsed(c.qIds || []));
 
   state.cardFlip.cards = cards;
   state.cardFlip.context = {
@@ -919,8 +1025,13 @@ function initCardDeck(round) {
   return true;
 }
 
-/** 某环节可用的题目数（翻牌与出题的前置条件） */
+/**
+ * 某环节可用的题目数（翻牌与出题的前置条件）
+ * R1/R2/R3 从扁平题型池里抽 → 看池子里还剩多少可用；
+ * R4/R5 是单独上传的题源 → 仍按 round 计数。
+ */
 function countQuestions(round) {
+  if (round >= 1 && round <= 3) return poolAvailable('any').length;
   return state.questions.filter(q => q.round === round).length;
 }
 
@@ -943,12 +1054,19 @@ function confirmFlip(cardId) {
   if (!card || !card.revealed) return false;
   card.used = true;
   const round = state.cardFlip.context.round;
-  if (round === 1 && card.qId != null) {
-    const idx = state.questions.findIndex(q => q.id === card.qId);
-    if (idx >= 0) state.r1.currentQIdx = idx;
-  } else if (round === 2 && card.qId != null) {
-    const idx = state.questions.findIndex(q => q.id === card.qId);
-    if (idx >= 0) state.r2.currentQIdx = idx;
+  if (round === 1 && card.qIds?.length) {
+    state.r1.turnQIds   = card.qIds;
+    state.r1.turnSubIdx = 0;
+    const idx = state.questions.findIndex(q => q.id === card.qIds[0]);
+    state.r1.currentQIdx = idx >= 0 ? idx : null;
+  } else if (round === 2 && card.qIds?.length) {
+    // R2 现在也是一张牌绑一整轮的题（每队各抽一组，不再全场共用同一组）
+    state.r2.turnQIdxs = card.qIds
+      .map(id => state.questions.findIndex(q => q.id === id))
+      .filter(i => i >= 0);
+    state.r2.qNum        = 0;
+    state.r2.turnResults = [];
+    state.r2.currentQIdx = state.r2.turnQIdxs.length ? state.r2.turnQIdxs[0] : null;
   } else if (round === 4 && card.imageKey != null) {
     const idx = state.questions.findIndex(q => q.imageKey === card.imageKey);
     if (idx >= 0) state.r4.currentQIdx = idx;
@@ -977,6 +1095,8 @@ function initR1() {
   state.r1.currentMemberIdx = 0;
   state.r1.currentQIdx      = null;
   state.r1.usedQIds         = [];
+  state.r1.turnQIds         = [];
+  state.r1.turnSubIdx       = 0;
   state.pickedAnswer         = null;
   state.showAnswerOnDisplay  = false;
   state.showScoresOnDisplay  = false;
@@ -1065,21 +1185,9 @@ function initR2() {
   save();
 }
 
-/** 本环节全部团队共答题在 questions[] 的索引（题量少，所有队答同一组） */
-function r2QuestionIdxs() {
-  const idxs = [];
-  state.questions.forEach((q, i) => { if (q.round === 2) idxs.push(i); });
-  return idxs;
-}
-
-/** 开始当前上场队的一轮：装载全部 R2 题，从第 1 题开始 */
-function r2StartTurn() {
-  state.r2.turnQIdxs   = r2QuestionIdxs();
-  state.r2.qNum        = 0;
-  state.r2.turnResults = [];
-  state.r2.currentQIdx = state.r2.turnQIdxs.length ? state.r2.turnQIdxs[0] : null;
-  save();
-}
+// 本队这一轮要答哪几题，已由 confirmFlip() 从翻开的那张牌上装载（每队各抽一组，
+// 不再全场共用同一组题）。原先的 r2QuestionIdxs()/r2StartTurn() 按 round===2 过滤题库，
+// 在「扁平题型池」模型下已无意义，故删除。
 
 /**
  * 给当前上场队的本题判分（只记队伍分，队员不计分）。
@@ -1192,10 +1300,12 @@ function initR3() {
   state.r3.selectedTeam    = null;
   state.r3.selectedMember  = null;
   state.r3.buzzPulse       = 0;
-  state.r3.supplementUsed  = false;
+  state.r3.excludedTeams   = [];
   state.r3.currentReadText = '';
   state.showAnswerOnDisplay = false;
   state.showScoresOnDisplay = false;
+  state.turnCard = { round: 3, revealed: false };
+  state.displayMode = 'turncard';
   resetTimer();
   save();
 }
@@ -1213,7 +1323,7 @@ function r3StartQuestion(qIdx, onArmed) {
   state.r3.buzzedTeam      = null;
   state.r3.selectedTeam    = null;
   state.r3.selectedMember  = null;
-  state.r3.supplementUsed  = false;
+  state.r3.excludedTeams   = [];   // 新题，重新允许所有队伍抢答
   state.r3.currentReadText = q.stem || '';
   state.showAnswerOnDisplay = false;
   save();
@@ -1240,6 +1350,7 @@ function r3TryBuzz(teamId, onViolationDone) {
     return r3EarlyBuzz(teamId, onViolationDone);
   }
   if (state.r3.buzzState !== 'armed') return false;
+  if ((state.r3.excludedTeams || []).includes(teamId)) return false;   // 本题已抢答过，不能再抢
   const team = getTeam(teamId);
   if (!team) return false;
   state.r3.buzzState      = 'locked';
@@ -1330,6 +1441,10 @@ function r3Score(correct) {
   };
   logEvent(event);
 
+  if (!correct) {
+    if (!state.r3.excludedTeams) state.r3.excludedTeams = [];
+    if (!state.r3.excludedTeams.includes(teamId)) state.r3.excludedTeams.push(teamId);
+  }
   state.r3.buzzState      = 'idle';
   state.r3.buzzedTeam     = null;
   state.r3.selectedTeam   = null;
@@ -1343,19 +1458,27 @@ function r3Score(correct) {
   return event;
 }
 
+/** 本题参赛队伍是否已全部抢答过（判错/超时），用于判断该不该自动出下一题 */
+function r3AllTeamsExcluded() {
+  const excluded = state.r3.excludedTeams || [];
+  return state.teams.length > 0 && state.teams.every(t => excluded.includes(t.id));
+}
+
 /**
- * 开放补抢（答错或超时后主持人触发）
+ * 开放补抢：判分后（答错/超时，记分牌已显示）主持人看完分数、手动点击才重新开放抢答，
+ * 不自动续接——把节奏交给主持人。全部队伍都试过了则拒绝，改由主持人点【出题】进下一题。
  */
 function r3OpenSupplement() {
-  if (state.r3.supplementUsed) return false;
-  if (state.r3.buzzState !== 'locked') return false;
-  state.r3.supplementUsed = true;
+  if (state.r3.currentQIdx == null) return false;
+  if (r3AllTeamsExcluded()) return false;
   state.r3.buzzState      = 'armed';
   state.r3.buzzedTeam     = null;
   state.r3.selectedTeam   = null;
   state.r3.selectedMember = null;
+  state.showAnswerOnDisplay = false;
+  state.showScoresOnDisplay = false;
   save();
-  if (window.IS_CONTROL) speak('开放补抢');
+  if (window.IS_CONTROL) speak('继续抢答');
   startTimer(state.r3.timerSec * 1000, 3);
   return true;
 }
@@ -1387,6 +1510,13 @@ function r3Timeout(skipAnnounce = true) {
     qId: q?.id, ts: Date.now(),
   };
   logEvent(event, skipAnnounce);
+  if (!state.r3.excludedTeams) state.r3.excludedTeams = [];
+  if (!state.r3.excludedTeams.includes(team.id)) state.r3.excludedTeams.push(team.id);
+  // 判罚后回到 idle（与 r3Score 一致）：记分牌留在大屏上，等主持人看完手动【开放补抢】
+  state.r3.buzzState      = 'idle';
+  state.r3.buzzedTeam     = null;
+  state.r3.selectedTeam   = null;
+  state.r3.selectedMember = null;
   state.showScoresOnDisplay = true;
   save();
   return event;
@@ -1496,6 +1626,8 @@ function initR5() {
   state.r5.themeWinners    = [];
   state.showAnswerOnDisplay = false;
   state.showScoresOnDisplay = false;
+  state.turnCard = { round: 5, revealed: false };
+  state.displayMode = 'turncard';
   resetTimer();
   save();
 }
@@ -1604,6 +1736,7 @@ function r5ValidAnswer(teamId, answer, opts = {}) {
     answer, ts: Date.now(),
   };
   logEvent(event);
+  state.showScoresOnDisplay = true;   // 每答对一条就及时把记分牌亮出来
   _r5NextTurn();
   return event;
 }
@@ -1622,6 +1755,7 @@ function r5Eliminate(teamId) {
     eliminated: true, ts: Date.now(),
   };
   logEvent(event, true);
+  state.showScoresOnDisplay = true;   // 出局也是一次战况变化，记分牌同步亮出来
   save();
   if (window.IS_CONTROL) speak(`${team.name}出局`);
   // 检查是否只剩一队（擂主）
@@ -1767,9 +1901,49 @@ function stopTimer() {
   state.timer.state = 'idle';
 }
 
+/**
+ * 导入题库：整库替换，并让旧题库彻底失效。
+ *
+ * 为什么要连带清状态：抽题记录（usedQIds）、牌组（cardFlip.cards 里的 qIds）、
+ * 各环节的当前题都是按【题目 id】记的。只换 questions 不清这些，旧 id 会变成
+ * 找不到题的悬空引用 —— 现场表现是「翻了牌但题目区空白」，且旧的已用记录会
+ * 无谓占掉新题库的抽题额度。所以导入即视为重新开局。
+ *
+ * 不动的：队伍/队员、分数与判分流水、抽签结果、品牌与规则等赛前设置。
+ * 分数要清请另点「清空所有分数」。
+ */
 function loadQuestions(data) {
   if (!data || !Array.isArray(data.questions)) return false;
   state.questions = data.questions;
+
+  // 抽题池归零
+  state.usedQIds = [];
+
+  // 牌组作废，回到无牌状态（大屏会落到赛前背景，不会停在空白翻牌页）
+  state.cardFlip.cards           = [];
+  state.cardFlip.context         = { round: null, teamId: null, memberIdx: null, pickCount: 0, picked: [] };
+  state.cardFlip.flipPulse       = 0;
+  state.cardFlip.lastFlippedCard = null;
+
+  // 各环节的「当前题/本轮题」全部清空，避免悬空 id
+  state.r1.currentQIdx = null;  state.r1.usedQIds   = [];
+  state.r1.turnQIds    = [];    state.r1.turnSubIdx = 0;
+  state.r2.currentQIdx = null;  state.r2.usedQIds   = [];
+  state.r2.turnQIdxs   = [];    state.r2.qNum       = 0;  state.r2.turnResults = [];
+  state.r3.currentQIdx = null;  state.r3.usedQIds   = [];
+  state.r3.excludedTeams = [];
+  _resetR3();
+  state.r4.currentQIdx = null;  state.r4.usedQIds   = [];
+  state.r4.spotJudge   = {};    state.r4.extraSpots = [];
+  state.r5.usedAnswers = [];    state.r5.themeWinners = [];
+
+  state.pickedAnswer        = null;
+  state.showAnswerOnDisplay = false;
+  state.showScoresOnDisplay = false;
+  state.turnCard            = { round: null, revealed: false };
+  state.displayMode         = 'question';
+  state.roundRulesDismissed = {};
+  resetTimer();
   save();
   return true;
 }

@@ -16,23 +16,25 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 body{background-position:center;background-size:cover;background-repeat:no-repeat;background-attachment:fixed}
 
 /* ── 顶栏 ── */
-#header{display:flex;align-items:center;gap:14px;padding:10px 24px;background:linear-gradient(135deg,rgba(10,22,40,.82),rgba(17,31,56,.82));border-bottom:1px solid var(--border);height:64px;flex-shrink:0}
-#header .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px;letter-spacing:.5px}
-#header .brand img{height:44px;border-radius:6px;object-fit:contain}
+/* 无底色横条，直接悬浮在背景图/内容之上，不遮挡图片；文字用阴影保读性。 */
+#header{display:flex;align-items:center;gap:14px;padding:14px 24px;position:absolute;top:0;left:0;right:0;z-index:6;pointer-events:none}
+#header .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px;letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.9),0 0 16px rgba(0,0,0,.6)}
+#brand-text{display:none}
+#header .brand img{height:44px;border-radius:6px;object-fit:contain;filter:drop-shadow(0 2px 6px rgba(0,0,0,.7))}
 #header .spacer{flex:1}
-#round-tag{padding:5px 18px;border-radius:12px;font-size:14px;font-weight:700;background:#1e3a5f;border:1px solid var(--accent);color:#93c5fd}
+#round-tag{padding:5px 18px;border-radius:12px;font-size:14px;font-weight:700;background:#1e3a5fee;border:1px solid var(--accent);color:#93c5fd}
 #timer-ring-wrap{position:relative;width:52px;height:52px;flex-shrink:0}
-#timer-ring-wrap svg{position:absolute;inset:0;transform:rotate(-90deg)}
-#timer-ring-wrap .ring-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--green)}
+#timer-ring-wrap svg{position:absolute;inset:0;transform:rotate(-90deg);filter:drop-shadow(0 2px 6px rgba(0,0,0,.7))}
+#timer-ring-wrap .ring-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--green);text-shadow:0 2px 6px rgba(0,0,0,.9)}
 #timer-ring-wrap .ring-text.warn{color:var(--yellow)}
 #timer-ring-wrap .ring-text.danger{color:var(--red);animation:pulse .6s ease-in-out infinite}
 
 /* ── 主区 ── */
-#main{display:flex;flex-direction:column;height:calc(100vh - 64px);overflow:hidden}
+#main{display:flex;flex-direction:column;height:100vh;overflow:hidden}
 
 /* ── 题目区 ── */
 #q-area{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:28px 40px;position:relative;overflow:hidden}
-#q-stem{font-size:clamp(20px,3vw,36px);font-weight:700;line-height:1.65;text-align:center;max-width:900px;color:var(--text)}
+#q-stem{font-size:clamp(20px,3vw,36px);font-weight:700;line-height:1.65;text-align:center;max-width:900px;color:var(--text);text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.6)}
 #q-options{margin-top:22px;display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:860px;width:100%}
 .q-opt{padding:12px 20px;border-radius:10px;border:2px solid var(--border);background:var(--surface);font-size:18px;transition:all .3s}
 .q-opt.correct{background:#14532d55;border-color:var(--green);color:#86efac;transform:scale(1.02)}
@@ -54,7 +56,9 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 
 /* ── 分数栏 ── */
-#scores-bar{display:none;background:linear-gradient(180deg,rgba(10,22,40,.85),rgba(15,31,54,.85));border-top:1px solid var(--border);padding:14px 24px;flex-shrink:0}
+/* fixed 贴底＋z-index 高于翻牌/抽签/飞花令等全屏覆盖层（z-index:5)，
+   否则 R5 飞花令从进场景到结束全程盖住 #main，分数栏永远显示不出来。 */
+#scores-bar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:20;background:linear-gradient(180deg,rgba(10,22,40,.85),rgba(15,31,54,.85));border-top:1px solid var(--border);padding:14px 24px}
 #scores-bar.visible{display:block}
 #scores-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
 .score-card{background:var(--surface2);border:2px solid var(--border);border-radius:12px;padding:12px 10px;text-align:center;transition:all .4s}
@@ -68,12 +72,12 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 #cardflip-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(160deg,#060e1e,#0a1a32);background-size:cover;background-position:center;z-index:5;gap:20px;padding:20px}
 #cardflip-area.show{display:flex}
 #cf-header{text-align:center}
-#cf-title{font-size:clamp(18px,2.5vw,30px);font-weight:800;color:var(--accent);letter-spacing:1px}
+#cf-title{font-size:clamp(18px,2.5vw,30px);font-weight:800;color:var(--accent);letter-spacing:1px;text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.6)}
 /* 环节规则窗口：浮在屏幕正中央 */
 #cf-rules{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:130;width:min(88vw,860px);background:rgba(15,31,54,.97);border:1px solid var(--accent);border-radius:16px;box-shadow:0 12px 60px #000a,0 0 0 100vmax rgba(3,8,18,.55);overflow:hidden}
 #cf-rules-title{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;font-weight:800;font-size:clamp(15px,1.8vw,22px);padding:10px 20px;letter-spacing:1px}
 #cf-rules-body{padding:14px 22px;font-size:clamp(13px,1.5vw,19px);line-height:1.8;color:var(--text);max-height:34vh;overflow:auto;white-space:pre-wrap}
-#cf-subtitle{font-size:clamp(12px,1.4vw,18px);color:var(--muted);margin-top:6px}
+#cf-subtitle{font-size:clamp(12px,1.4vw,18px);color:var(--muted);margin-top:6px;text-shadow:0 1px 6px rgba(0,0,0,.85)}
 .cf-grid{display:grid;gap:clamp(8px,1vw,14px)}
 .cf-card{border-radius:12px;perspective:900px}
 .cf-card-inner{position:relative;width:100%;height:100%;transition:transform .7s cubic-bezier(.4,.2,.2,1);transform-style:preserve-3d}
@@ -86,6 +90,12 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 .cf-card.used .cf-front{background:#0a0f1a;border-color:#111827;opacity:.45}
 .cf-card.flipped .cf-back{box-shadow:0 0 30px #3b82f666,0 0 60px #3b82f622}
 
+/* ── 单卡翻牌（R3/R5 出题前等待态）── */
+#turncard-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(160deg,#060e1e,#0a1a32);background-size:cover;background-position:center;z-index:5;gap:26px;padding:20px}
+#turncard-area.show{display:flex}
+#tc-title{font-size:clamp(18px,2.5vw,30px);font-weight:800;color:var(--accent);letter-spacing:1px;text-align:center;text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.6)}
+#tc-subtitle{font-size:clamp(12px,1.4vw,18px);color:var(--muted);margin-top:6px;text-align:center;text-shadow:0 1px 6px rgba(0,0,0,.85)}
+
 /* ── 抽签动画 ── */
 #draw-area{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:24px;background:var(--bg);background-size:cover;background-position:center;z-index:5}
 #draw-area.show{display:flex}
@@ -97,12 +107,13 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 /* ── 飞花令界面 ── */
 #flower-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);background-size:cover;background-position:center;z-index:5;padding:32px}
 #flower-area.show{display:flex}
-#flower-theme{font-size:clamp(24px,3vw,40px);font-weight:800;color:var(--accent);margin-bottom:8px;letter-spacing:1px}
-#flower-turn{font-size:clamp(20px,2.5vw,32px);font-weight:700;padding:14px 40px;border-radius:14px;border:3px solid var(--green);color:var(--green);background:#14532d22;animation:pulse-glow-g 1.2s ease-in-out infinite}
-#flower-used{font-size:14px;color:var(--muted);max-width:800px;text-align:center;line-height:2}
+#flower-theme{font-size:clamp(24px,3vw,40px);font-weight:800;color:var(--accent);margin-bottom:8px;letter-spacing:1px;text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.6)}
+#flower-turn{font-size:clamp(20px,2.5vw,32px);font-weight:700;padding:14px 40px;border-radius:14px;border:3px solid var(--green);color:var(--green);background:#14532dcc;animation:pulse-glow-g 1.2s ease-in-out infinite}
+#flower-used{font-size:clamp(16px,2vw,24px);color:var(--text);max-width:1000px;text-align:center;line-height:2.2;text-shadow:0 1px 6px rgba(0,0,0,.85)}
+#flower-used-label{font-size:clamp(14px,1.6vw,20px);color:var(--muted);text-shadow:0 1px 6px rgba(0,0,0,.85)}
 
 /* 全屏无题提示 */
-#no-q-hint{font-size:clamp(16px,2vw,26px);color:var(--muted);text-align:center;padding:40px}
+#no-q-hint{font-size:clamp(16px,2vw,26px);color:var(--muted);text-align:center;padding:40px;text-shadow:0 1px 6px rgba(0,0,0,.85)}
 
 /* ── 赛前背景图（整屏铺满，遮住顶栏/分数栏等一切） ── */
 #prep-cover{position:fixed;inset:0;z-index:100;display:none;background:var(--bg) center/cover no-repeat}
@@ -177,9 +188,28 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
   <div id="cf-grid-wrap"></div>
 </div>
 
+<!-- single turn-card overlay（R3/R5「出题」前的等待态） -->
+<div id="turncard-area">
+  <div>
+    <div id="tc-title"></div>
+    <div id="tc-subtitle"></div>
+  </div>
+  <div class="cf-grid" style="grid-template-columns:240px;grid-auto-rows:310px">
+    <div class="cf-card" id="tc-card">
+      <div class="cf-card-inner">
+        <div class="cf-front">
+          <div class="cf-num">🎴</div>
+          <div class="cf-deco">· · ·</div>
+        </div>
+        <div class="cf-back">即将揭晓</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- draw overlay -->
 <div id="draw-area">
-  <div style="font-size:28px;font-weight:800;color:var(--accent)">出场顺序抽签结果</div>
+  <div style="font-size:28px;font-weight:800;color:var(--accent);text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.6)">出场顺序抽签结果</div>
   <div id="draw-slots-row" class="draw-slots-row"></div>
 </div>
 
@@ -187,7 +217,7 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 <div id="flower-area">
   <div id="flower-theme"></div>
   <div id="flower-turn"></div>
-  <div id="flower-used-label" style="font-size:14px;color:var(--muted);margin-top:8px">已用答案：</div>
+  <div id="flower-used-label" style="margin-top:8px">已用答案：</div>
   <div id="flower-used"></div>
 </div>
 
@@ -216,13 +246,17 @@ function render() {
 
   const mode = state.displayMode || 'question';
   const inCardFlip = mode === 'cardflip' && state.cardFlip.cards?.length;
+  const inTurnCard = mode === 'turncard' && state.turnCard?.round === state.currentRound;
 
   // overlay管理
   document.getElementById('draw-area').classList.toggle('show', mode === 'draw');
   document.getElementById('cardflip-area').classList.toggle('show', !!inCardFlip);
-  document.getElementById('flower-area').classList.toggle('show', state.currentRound === 5);
+  document.getElementById('turncard-area').classList.toggle('show', !!inTurnCard);
+  document.getElementById('flower-area').classList.toggle('show', state.currentRound === 5 && !inTurnCard);
 
-  if (state.currentRound === 5) {
+  if (inTurnCard) {
+    updateTurnCard();
+  } else if (state.currentRound === 5) {
     updateFlowerArea();
   } else if (inCardFlip) {
     updateCardFlip();
@@ -238,15 +272,15 @@ function render() {
 }
 
 // ── 题目背景图 ────────────────────────────────────
-// 铺在整个大屏底层（出题/翻牌/抽签/飞花令都能透出）。叠一层压暗，
-// 保证浅色题干在图片亮部仍然清晰。未上传则回到默认深色底。
+// 铺在整个大屏底层（出题/翻牌/抽签/飞花令都能透出）。不叠压暗层，保持图片原色；
+// 直接盖在图上的文字改用 text-shadow 保证可读性（见对应 CSS）。未上传则回到默认深色底。
 function updateQuestionBg() {
   const img = state.questionBg;
   // 翻牌/抽签/飞花令是【不透明】覆盖层（要遮住上一题的残留内容），
   // 所以底图得单独铺到它们身上，不能只铺 body。
-  const layers = ['cardflip-area', 'draw-area', 'flower-area'];
+  const layers = ['cardflip-area', 'draw-area', 'flower-area', 'turncard-area'];
   if (img) {
-    const bg = `linear-gradient(rgba(5,13,26,.55),rgba(5,13,26,.55)), url("${img}")`;
+    const bg = `url("${img}")`;
     document.body.style.backgroundImage = bg;
     layers.forEach(id => { const el = document.getElementById(id); if (el) el.style.backgroundImage = bg; });
   } else {
@@ -283,9 +317,10 @@ function updatePrepCover() {
   const mode  = state.displayMode || 'question';
   const inCardFlip = mode === 'cardflip' && state.cardFlip.cards?.length;
   const inDraw     = mode === 'draw';
-  const inFlower   = state.currentRound === 5;
+  const inTurnCard = mode === 'turncard' && state.turnCard?.round === state.currentRound;
+  const inFlower   = state.currentRound === 5 && !inTurnCard;
   const hasQuestion = getActiveQIdx() != null;
-  const showCover = !inCardFlip && !inDraw && !inFlower && !hasQuestion;
+  const showCover = !inCardFlip && !inDraw && !inFlower && !inTurnCard && !hasQuestion;
   cover.classList.toggle('show', showCover);
   if (!showCover) { cover.style.backgroundImage = 'none'; return; }
   if (state.prepBg) {
@@ -515,6 +550,19 @@ const CF_CFG = {
        title:'识图找茬 · 翻牌揭题', hint:'请本队选手报出 1 ~ {n} 的牌号' },
 };
 
+// ── 单卡翻牌（R3/R5 出题前等待态）─────────────────
+const TC_CFG = {
+  3: { title: '擂台抢答', hint: '主持人即将出题' },
+  5: { title: '服务飞花令', hint: '主持人即将公布令题' },
+};
+function updateTurnCard() {
+  const round = state.turnCard?.round;
+  const cfg = TC_CFG[round] || { title: '', hint: '' };
+  document.getElementById('tc-title').textContent = cfg.title;
+  document.getElementById('tc-subtitle').textContent = cfg.hint;
+  document.getElementById('tc-card').classList.toggle('flipped', !!state.turnCard?.revealed);
+}
+
 function updateCardFlip() {
   const cards = state.cardFlip.cards;
   if (!cards?.length) return;
@@ -528,9 +576,11 @@ function updateCardFlip() {
   document.getElementById('cf-title').textContent = cfg.title;
   let subtitle = (cfg.hint || '').replace('{n}', cards.length);
   if (round === 1) {
+    // R1 不依赖抽签，没抽签时 draw.teamOrder 是空的，要回退到队伍设置顺序
     const tIdx  = state.r1.currentTeamIdx;
     const mIdx  = state.r1.currentMemberIdx;
-    const tid   = state.draw.teamOrder[tIdx];
+    const order = state.draw.teamOrder.length ? state.draw.teamOrder : state.teams.map(t => t.id);
+    const tid   = order[tIdx];
     const team  = state.teams.find(t => t.id === tid);
     if (team) subtitle = `当前答题：${team.name} · ${team.members[mIdx] || `队员${mIdx+1}`}`;
   } else if (round === 2) {
@@ -614,7 +664,7 @@ function updateFlowerArea() {
   if (curTeam && active.includes(curId)) {
     const c = tColor(curTeam);
     turnEl.textContent = `轮到 ${curTeam.name} 作答`;
-    turnEl.style.cssText = `font-size:clamp(20px,2.5vw,32px);font-weight:700;padding:14px 40px;border-radius:14px;border:3px solid ${c};color:${c};background:${c}22;animation:pulse-glow-g 1.2s ease-in-out infinite`;
+    turnEl.style.cssText = `font-size:clamp(20px,2.5vw,32px);font-weight:700;padding:14px 40px;border-radius:14px;border:3px solid ${c};color:${c};background:${c}cc;text-shadow:0 1px 6px rgba(0,0,0,.7);animation:pulse-glow-g 1.2s ease-in-out infinite`;
   } else {
     turnEl.textContent = '';
     turnEl.style.cssText = '';

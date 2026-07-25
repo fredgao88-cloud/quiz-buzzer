@@ -182,11 +182,11 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
 <!-- round tabs -->
 <div id="round-tabs">
   <button class="rtab active" data-r="0" onclick="switchPanel(0)">赛前准备</button>
-  <button class="rtab" data-r="1" onclick="switchPanel(1)">① 个人必答</button>
-  <button class="rtab" data-r="2" onclick="switchPanel(2)">② 团队共答</button>
-  <button class="rtab" data-r="3" onclick="switchPanel(3)">③ 擂台抢答</button>
-  <button class="rtab" data-r="4" onclick="switchPanel(4)">④ 识图找茬</button>
-  <button class="rtab" data-r="5" onclick="switchPanel(5)">⑤ 服务飞花令</button>
+  <button class="rtab" data-r="1" onclick="switchTab(1)">① 个人必答</button>
+  <button class="rtab" data-r="2" onclick="switchTab(2)">② 团队共答</button>
+  <button class="rtab" data-r="3" onclick="switchTab(3)">③ 擂台抢答</button>
+  <button class="rtab" data-r="4" onclick="switchTab(4)">④ 识图找茬</button>
+  <button class="rtab" data-r="5" onclick="switchTab(5)">⑤ 服务飞花令</button>
 </div>
 
 <!-- main -->
@@ -271,7 +271,7 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
       <div class="row" style="margin-bottom:6px">
         <span style="font-size:12px;color:var(--muted)">翻牌选题</span>
         <button class="btn-ghost btn-sm" onclick="r1InitDeck()">重置牌组</button>
-        <label style="display:inline-flex;align-items:center;gap:3px;margin:0;font-size:12px" title="牌组张数，0=用全部可用题目。改动后自动重置牌组">牌数<input type="number" id="r1-deck-size" min="0" max="200" style="width:52px" onchange="setDeckSize(1,this.value);r1InitDeck()"><span style="color:var(--muted)">0=全部</span></label>
+        <span id="r1-deck-cfg" style="font-size:12px;color:var(--muted)"></span>
         <span id="r1-card-left" style="font-size:12px;color:var(--muted)"></span>
       </div>
       <div id="r1-flip-grid" class="flip-grid"></div>
@@ -346,14 +346,14 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
       <label style="display:inline-flex;align-items:center;gap:3px;margin:0">倒计时<input type="number" id="r3-timer-sec" value="15" min="5" max="120" style="width:50px" onchange="state.r3.timerSec=+this.value;save()">秒</label>
       <span id="r3-progress" style="color:var(--muted);font-size:12px"></span>
     </div>
-    <div id="r3-q-box" class="q-box"><span style="color:var(--muted)">点击【出题】开始</span></div>
-    <!-- 已抢答队伍 -->
+    <!-- 已抢答队伍：放在题目上方——必须先选队员，再去点题目选项判分 -->
     <div id="r3-buzz-info" style="display:none" class="q-box">
       <div class="q-index">抢答成功</div>
       <div id="r3-buzz-team" class="row"></div>
-      <div style="margin-top:6px;font-size:12px;color:var(--muted)">选择回答队员：</div>
+      <div id="r3-member-hint" style="margin-top:6px;font-size:12px;color:var(--muted)">选择回答队员：</div>
       <div id="r3-member-btns" class="row" style="margin-top:4px"></div>
     </div>
+    <div id="r3-q-box" class="q-box"><span style="color:var(--muted)">点击【出题】开始</span></div>
     <!-- 判分 -->
     <div class="row" style="margin-top:10px">
       <button class="btn-success btn-sm" id="btn-r3-ok" onclick="doR3(true)" disabled>手动判对 +2</button>
@@ -422,6 +422,7 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
       <span id="r5-theme-label" style="font-size:15px;font-weight:700;color:var(--accent)"></span>
     </div>
     <div id="r5-theme-btns" class="row" style="margin-bottom:10px"></div>
+    <div id="r5-pool" style="margin-bottom:10px"></div>
     <div id="r5-turn-banner" class="buzz-banner buzz-idle">待机</div>
     <div id="r5-team-rows" style="margin-top:8px"></div>
     <div class="row" style="margin-top:10px">
@@ -516,6 +517,25 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
           </div>
         </div>
       </div>
+    </div>
+    <div class="sep"></div>
+
+    <div class="s-section">
+      <h3>各环节抽题配置</h3>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">
+        题库是一个扁平的题型池，<b>不预分配环节</b>。这里配好「翻几轮 × 每轮几题 × 每题题型」，
+        点各环节的【开始本环节】时才按配置从池子里随机抽题；<b>抽过的题全场（跨环节）不再重复出现</b>。
+        识图找茬、服务飞花令的题是单独上传的题源，不参与随机抽取。
+      </div>
+      <div id="draw-cfg-editors"></div>
+      <div style="font-size:11px;color:var(--muted)">改配置不会打断正在进行的环节；下次点【开始本环节】或面板里的【重置牌组】才按新配置重新发牌。</div>
+    </div>
+    <div class="sep"></div>
+
+    <div class="s-section">
+      <h3>识图找茬场景图</h3>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">对应题库 spot 题的 imageKey；不上传则用项目 images/ 目录下的同名文件（图A.png ~ 图E.png）。</div>
+      <div id="r4img-editors"></div>
     </div>
     <div class="sep"></div>
 
@@ -635,7 +655,19 @@ function tColor(team) {
   return COLORS[i % 5];
 }
 
-// ── 切面板 ──────────────────────────────────────
+// ── 切 Tab（仅控制台本地导航，不驱动大屏）──────────
+// 主持人点顶栏 Tab 只是想「看看这个环节的控制面板」，不代表要现在就开始这个环节。
+// 大屏该显示什么由 state.currentRound/displayMode 决定，这两个只应在真正
+// 点击「开始本环节」（r1Init~r5Init）时才改变。否则会出现「刚点一下 Tab，
+// 大屏就自动翻牌、弹规则窗念语音」的问题，且各环节表现还不一致。
+function switchTab(n) {
+  curPanel = n;
+  document.querySelectorAll('.rtab').forEach(t => t.classList.toggle('active', +t.dataset.r === n));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === `panel-${n}`));
+  render();
+}
+
+// ── 切面板 ＋ 驱动大屏（真正开始/回到某环节时用）───
 function switchPanel(n) {
   curPanel = n;
   if (n === 0) {
@@ -815,21 +847,17 @@ function onTimerExpired(round) {
   render();
 }
 
-/** R3 超时：locked=作答超时扣分并视情况开放补抢；armed=无人抢答
- *  判分规则在 shared.js r3Timeout()，这里只做语音与补抢的流程编排 */
+/** R3 超时：locked=作答超时扣分，记分牌留在大屏，等主持人看完手动【开放补抢】；
+ *  armed=无人抢答，直接回到待机。都不自动往下走——节奏交给主持人。
+ *  判分规则在 shared.js r3Timeout()，这里只做语音播报。 */
 function r3AutoTimeout() {
   const bs = state.r3.buzzState;
   if (bs === 'locked') {
+    if (_r3Locked) { render(); return; }   // 人工判分/超时已抢先一步，避免重复扣分
+    _r3Locked = true;
     const ev = r3Timeout();          // 扣分 + 记事件（skipAnnounce）
     if (!ev) { render(); return; }
-    const announce = `${ev.teamName}，作答超时，扣${scoreToSpeech(Math.abs(ev.delta))}`;
-    if (!state.r3.supplementUsed) {
-      // r3OpenSupplement 要求 locked 状态，故播报完再开放补抢（此时状态仍是 locked）
-      speakQueue([announce], () => { r3OpenSupplement(); render(); });
-    } else {
-      r3ResetBuzz();
-      speak(announce);
-    }
+    speak(`${ev.teamName}，作答超时，扣${scoreToSpeech(Math.abs(ev.delta))}`);
   } else if (bs === 'armed') {
     r3ResetBuzz();
     speak('时间到，无人抢答');
@@ -943,10 +971,15 @@ function renderP0() {
   }
 
   // 题库
+  // 题库统计：按【题型】报余量（池子是扁平的，不按环节分），另列单独上传的图题/令题
   const qs = state.questions;
+  const poolTypes = ['judge','single','multi','fill','fill_multi'];
+  const usedN = (state.usedQIds || []).length;
   document.getElementById('p0-qstats').innerHTML = qs.length
     ? `<span style="color:var(--green)">已加载 ${qs.length} 道题</span>
-       <span style="color:var(--muted);font-size:12px">R1:${qs.filter(q=>q.round===1).length} R2:${qs.filter(q=>q.round===2).length} R3:${qs.filter(q=>q.round===3).length} R4:${qs.filter(q=>q.round===4).length} R5:${qs.filter(q=>q.round===5).length}</span>`
+       <span style="color:var(--muted);font-size:12px">抽题池 ${poolAll().length} 道（已抽走 ${usedN}）：`
+       + poolTypes.map(t => `${TYPE_LABEL[t]}${poolAvailable(t).length}`).join(' ')
+       + `　｜ 图题${qs.filter(q=>q.type==='spot').length} 令题${qs.filter(q=>q.type==='theme').length}</span>`
     : `<span style="color:var(--red)">尚未加载题库</span>`;
 }
 
@@ -957,8 +990,11 @@ function renderP1() {
   const team = getTeamByIdx(tIdx);
   const c    = team ? tColor(team) : '#888';
 
-  document.getElementById('r1-progress').textContent =
-    `第${tIdx+1}队 / 队员${mIdx+1} · 已答${state.r1.usedQIds.length}题`;
+  const subTotal = state.r1.turnQIds?.length || 0;
+  const subPos   = Math.min((state.r1.turnSubIdx ?? 0) + 1, subTotal || 1);
+  document.getElementById('r1-progress').textContent = subTotal
+    ? `第${tIdx+1}队 / 队员${mIdx+1} · 本轮第${subPos}/${subTotal}题 · 已抽${state.r1.usedQIds.length}题`
+    : `第${tIdx+1}队 / 队员${mIdx+1} · 已抽${state.r1.usedQIds.length}题`;
 
   document.getElementById('r1-answerer-row').innerHTML = team
     ? `<span style="color:${c};font-weight:700;font-size:15px">${escapeHtml(team.name)}</span>`
@@ -974,18 +1010,14 @@ function renderP1() {
   const cards = state.cardFlip.context?.round === 1 ? state.cardFlip.cards : [];
   renderFlipGrid('r1-flip-grid', cards, 'r1');
   document.getElementById('r1-card-left').textContent =
-    cards.length ? `剩余 ${getAvailableCards().length}/${cards.length} 张` : '';
+    cards.length ? `剩余 ${getAvailableCards().length}/${cards.length} 轮` : '';
+
+  // 只读回显设置里的抽题配置，让主持人不用切到设置面板也能确认牌是按什么规则发的
+  document.getElementById('r1-deck-cfg').innerHTML = drawCfgSummary(1, cards.length);
 
   renderRoundScores('r1-scores', 'r1');
   document.getElementById('r1-timer-sec').value = state.r1.timerSec;
   document.getElementById('r1-auto-advance').checked = state.r1.autoAdvance !== false;
-  setDeckSizeInput('r1-deck-size', 1);
-}
-
-// 回填牌数输入框（用户正在输入时不打断）
-function setDeckSizeInput(elId, round) {
-  const el = document.getElementById(elId);
-  if (el && el !== document.activeElement) el.value = state.cardFlip.deckSize?.[round] ?? 0;
 }
 
 // ── P2 渲染 ─────────────────────────────────────
@@ -1037,16 +1069,23 @@ function renderP3() {
   banner.textContent = bm.text;
   banner.className = `buzz-banner ${bm.cls}${bm.anim?' anim-pulse':''}`;
 
-  document.getElementById('r3-progress').textContent = `已用 ${state.r3.usedQIds.length}/25 题`;
-  renderQBox('r3-q-box', state.r3.currentQIdx, true);
+  const r3cfg = getRoundCfg(3);
+  document.getElementById('r3-progress').textContent =
+    `已出 ${state.r3.usedQIds.length}/${r3cfg.turns || '不限'} 题`
+    + `　题型：${r3cfg.types.map(t => TYPE_LABEL[t] || t).join('/')}`
+    + `　池中可用 ${poolAvailable('any').length} 道`;
 
   const bi = document.getElementById('r3-buzz-info');
+  const memberChosen = state.r3.selectedMember != null;
   if (bs === 'locked') {
     bi.style.display = '';
     const buzzTeam = state.teams.find(t => t.id === state.r3.buzzedTeam);
     const c = buzzTeam ? tColor(buzzTeam) : '#888';
     document.getElementById('r3-buzz-team').innerHTML =
       `<span style="color:${c};font-weight:700;font-size:16px">${escapeHtml(buzzTeam?.name||'?')}</span>`;
+    document.getElementById('r3-member-hint').innerHTML = memberChosen
+      ? '选择回答队员：'
+      : '<span style="color:var(--red);font-weight:700">← 请先选择回答队员，再点题目选项或判分按钮</span>';
     document.getElementById('r3-member-btns').innerHTML = buzzTeam
       ? buzzTeam.members.map((m,i) =>
           `<button class="member-btn${i===state.r3.selectedMember?' active':''}" onclick="r3SetMem(${i})">${escapeHtml(m)}</button>`
@@ -1056,10 +1095,15 @@ function renderP3() {
     bi.style.display = 'none';
   }
 
+  // interactive 只在已选队员时才允许点选项直接判分，避免没选人就点答案却被 alert 拦下
+  renderQBox('r3-q-box', state.r3.currentQIdx, bs !== 'locked' || memberChosen);
+
   const canScore = bs === 'locked' && state.r3.selectedTeam != null && state.r3.selectedMember != null;
   document.getElementById('btn-r3-ok').disabled   = !canScore;
   document.getElementById('btn-r3-err').disabled  = !canScore;
-  document.getElementById('btn-r3-supp').disabled = bs !== 'locked' || state.r3.supplementUsed;
+  // 「开放补抢」只在刚判完（idle）、题还没换、还有队没抢过时才有意义
+  document.getElementById('btn-r3-supp').disabled =
+    bs !== 'idle' || state.r3.currentQIdx == null || r3AllTeamsExcluded();
   document.getElementById('btn-r3-timeout').disabled = (bs !== 'armed' && bs !== 'locked');
 
   renderRoundScores('r3-scores', 'r3');
@@ -1142,6 +1186,28 @@ function renderP5() {
     `<button class="${i===thIdx?'btn-primary':'btn-ghost'} btn-sm" onclick="r5SetTheme(${i})">${escapeHtml(t.stem||`令题${i+1}`)}</button>`
   ).join('') || '<span style="color:var(--muted);font-size:12px">题库中暂无飞花令令题（round:5, type:theme）</span>';
 
+  // 参考答案：主持人听完选手说的内容，直接点参考答案里对应那条 = 判该队答对；
+  // 说的内容不在列表里 = 算错，点下方【出局】。已被别的队用过的选项禁用，防重复。
+  const pool = curTheme?.answerPool || [];
+  const poolBox = document.getElementById('r5-pool');
+  if (pool.length) {
+    poolBox.innerHTML =
+      `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">参考答案（点击＝判当前队答对；说的内容不在下面＝算错，点【出局】）</div>` +
+      `<div class="row">` + pool.map(a => {
+        const usedEv = (state.r5.usedAnswers || []).find(u => normalizeAnswer(u.answer) === normalizeAnswer(a));
+        if (usedEv) {
+          const usedTeam = state.teams.find(t => t.id === usedEv.teamId);
+          return `<button class="btn-ghost btn-sm" disabled title="已被${escapeAttr(usedTeam?.name||'')}用过"
+                    style="opacity:.4;text-decoration:line-through">${escapeHtml(a)}</button>`;
+        }
+        return `<button class="btn-ghost btn-sm" onclick="r5PickAnswer('${escapeAttr(a)}')">${escapeHtml(a)}</button>`;
+      }).join('') + `</div>`;
+  } else {
+    poolBox.innerHTML = curTheme
+      ? '<span style="font-size:12px;color:var(--muted)">本令题未配参考答案，用队伍行里的【有效】手动录入判定</span>'
+      : '';
+  }
+
   const tOrder = state.r5.teamOrder.length ? state.r5.teamOrder : state.teams.map(t=>t.id);
   const active = state.r5.activeTeams || [];
   const curId  = tOrder[state.r5.currentTurnIdx];
@@ -1168,7 +1234,7 @@ function renderP5() {
       <div style="color:${c};font-weight:700;min-width:60px">${escapeHtml(t.name)}</div>
       <div style="font-weight:700;color:var(--accent);min-width:50px">R5:${t.scores.r5||0}</div>
       <div style="flex:1;font-size:12px;color:var(--muted)">${isOut?'[已出局]':''}</div>
-      ${!isOut ? `<button class="btn-success btn-sm" onclick="r5DoValid(${tid})">有效</button>
+      ${!isOut ? `${pool.length ? '' : `<button class="btn-success btn-sm" onclick="r5DoValid(${tid})">有效</button>`}
                   <button class="btn-danger btn-sm" onclick="r5DoElim(${tid})">出局</button>` : ''}
     </div>`;
   }).join('');
@@ -1235,6 +1301,14 @@ function renderQBox(elId, qIdx, interactive) {
       </div>`;
     }
   }
+  // 单项填空：答案后台常显（同多空题）。填空没有选项可点，操作员必须先看到
+  // 正确答案才能判对/判错；而 showAnswerOnDisplay 是「向大屏公布答案」的开关，
+  // 判分前它是 false，光靠它控制台也看不到答案 —— 那就没法判分了。
+  // 这里只影响控制台（renderQBox 仅在 index.html 使用），大屏另有 updateQuestion。
+  if (q.type === 'fill' && q.answer != null && !showAns) {
+    const ans = Array.isArray(q.answer) ? q.answer.join(' / ') : String(q.answer);
+    html += `<div class="q-options"><div class="q-option correct">答案：${escapeHtml(ans)}</div></div>`;
+  }
   if (showAns && q.answer) {
     const ans = Array.isArray(q.answer) ? q.answer.join('、') : String(q.answer);
     html += `<div class="q-answer">答案：${escapeHtml(ans)}</div>`;
@@ -1283,6 +1357,7 @@ function autoJudge(elId, selected) {
     window[selKey] = [];
     // 两段式：① 先在大屏显示选手所选（选错=红），暂不揭晓正确答案
     r1CancelAutoAdvance();               // 若上一题的自动切换还挂着，先撤掉
+    r1CancelSubAdvance();                // 本轮下一题的待触发切换也一并撤掉
     state.pickedAnswer = selected.slice();
     state.showAnswerOnDisplay = false;
     state.showScoresOnDisplay = false;
@@ -1380,7 +1455,7 @@ document.addEventListener('keydown', e => {
   const km = state.keymap || {};
   for (const [tid, keys] of Object.entries(km)) {
     if (keys.includes(e.key)) {
-      r3TryBuzz(+tid);
+      if (r3TryBuzz(+tid)) _r3Locked = false;   // 新一次抢答锁定成功，解开判分锁
       break;
     }
   }
@@ -1554,17 +1629,35 @@ function requireReady(round, opts = {}) {
 
 // ── R1 个人必答 ───────────────────────────────────
 function r1Init() {
-  if (!requireReady(1)) return;
+  if (!requireReady(1, { needDraw:false })) return;   // R1 按队×队员自动轮转，不依赖出场顺序
   // 重开本环节 → 规则窗口重新展示并朗读（清掉「已读」标记，让下面的响应式播报重新触发）
   if (state.roundRulesDismissed) delete state.roundRulesDismissed[1];
   _r1Locked = false;
   initR1();
   switchPanel(1);
   if (!initCardDeck(1)) {
-    alert('翻牌牌组生成失败。\n\n请检查赛前准备面板中「翻牌选题」是否被关闭。');
+    alert('翻牌牌组生成失败——池子里抽不出符合配置的题。\n\n'
+        + `${drawShortageDetail(1)}\n\n`
+        + '位置：设置 → 各环节抽题配置，改题型/每轮题数，或导入题量更足的题库。');
     return;
   }
+  warnIfDeckShort(1);
   render();
+}
+
+/**
+ * 牌发出来了但少于设置要求的轮数 —— 池子不够。必须当场说清楚，
+ * 否则主持人只会看到「设了 20 轮却只有 13 张牌」，误以为设置没生效。
+ */
+function warnIfDeckShort(round) {
+  const cfg  = getRoundCfg(round);
+  const want = round === 2 ? (state.draw.teamOrder.length || state.teams.length) : cfg.turns;
+  const got  = state.cardFlip.cards.length;
+  if (!(want > 0 && got < want)) return;
+  alert(`轮数不足：设置里要 ${want} 轮，池子只够发 ${got} 轮。\n\n${drawShortageDetail(round)}\n\n`
+      + `要凑够 ${want} 轮，每个题型至少要有「每轮用量 × ${want}」道题。\n`
+      + `本环节可以照 ${got} 轮先进行，或导入题量更足的题库后重开本环节。\n\n`
+      + `注意：抽过的题全场不再重复，所以前面环节用掉的题也会占额度。`);
 }
 
 // 大屏进入翻牌选题、且本环节配了规则时：亮出规则窗口 → 系统朗读 → 读完自动关窗。
@@ -1646,9 +1739,12 @@ function r1ReadQ() {
 }
 function r1NextAnswerer() {
   r1CancelAutoAdvance();                 // 手动推进则取消待触发的自动切换，避免跳两位
+  r1CancelSubAdvance();                  // 也撤掉待触发的本轮下一题（放弃当前这轮剩下的题）
   r1CancelReveal();                      // 也撤掉可能挂着的揭晓定时器
   _r1Locked = false;                     // 下一位解锁
-  const order = state.draw.teamOrder;
+  // R1 不依赖抽签：没抽签时按队伍设置顺序走（与 getTeamByIdx 的回退逻辑一致），
+  // 否则 order.length 为 0，答完第一题就会被误判成「全部完成」。
+  const order = state.draw.teamOrder.length ? state.draw.teamOrder : state.teams.map(t => t.id);
   let tIdx = state.r1.currentTeamIdx;
   let mIdx = state.r1.currentMemberIdx + 1;
   if (mIdx >= 4) { mIdx = 0; tIdx++; }
@@ -1656,6 +1752,8 @@ function r1NextAnswerer() {
   state.r1.currentTeamIdx   = tIdx;
   state.r1.currentMemberIdx = mIdx;
   state.r1.currentQIdx      = null;
+  state.r1.turnQIds         = [];
+  state.r1.turnSubIdx       = 0;
   state.pickedAnswer         = null;   // 清掉上一位选手所选，避免红/绿残留到下一位
   state.showAnswerOnDisplay  = false;
   state.showScoresOnDisplay  = false;
@@ -1713,8 +1811,11 @@ function doR1(result, note = '') {
   } else {
     resultText = `回答正确，${memberName}得到${scoreToSpeech(event.delta)}，${team.name}总分${scoreToSpeech(total)}`;
   }
-  // 播报完成后自动切下一位。onend 在 TTS 关闭/失败时也会立即回调，故两种情况都能推进。
-  speak(resultText, { onend: r1ScheduleAutoAdvance });
+  // 本轮（这次翻牌）还有下一题 → 播完接着换本轮下一题，同一位选手继续答；
+  // 本轮已经是最后一题 → 播完才轮到下一位（受「判分后自动下一位」开关控制）。
+  // onend 在 TTS 关闭/失败时也会立即回调，故两种情况都能推进。
+  const hasNextSub = state.r1.turnSubIdx + 1 < (state.r1.turnQIds?.length || 0);
+  speak(resultText, { onend: hasNextSub ? r1ScheduleNextSub : r1ScheduleAutoAdvance });
 }
 
 // ── R1 判分后自动切换答题人 ───────────────────────
@@ -1735,6 +1836,34 @@ function r1ScheduleAutoAdvance() {
 }
 function r1SetAutoAdvance(on) { state.r1.autoAdvance = on; save(); }
 
+// ── R1 本轮（一次翻牌里）切换下一题 ─────────────────
+// 同一位选手连续作答 questionsPerTurn 道题；每题判完分、播报完，
+// 本轮没答完就自动接下一题（不受「判分后自动下一位」开关影响——那个开关管的是换人，不是换题）。
+let _r1SubAdvanceTimer = null;
+function r1CancelSubAdvance() {
+  if (_r1SubAdvanceTimer) { clearTimeout(_r1SubAdvanceTimer); _r1SubAdvanceTimer = null; }
+}
+function r1ScheduleNextSub() {
+  if (state.currentRound !== 1) return;
+  r1CancelSubAdvance();
+  _r1SubAdvanceTimer = setTimeout(() => {
+    _r1SubAdvanceTimer = null;
+    if (state.currentRound === 1) r1NextSubQuestion();
+  }, 1200);
+}
+function r1NextSubQuestion() {
+  state.r1.turnSubIdx++;
+  const qid = state.r1.turnQIds[state.r1.turnSubIdx];
+  const idx = qid != null ? state.questions.findIndex(q => q.id === qid) : -1;
+  state.r1.currentQIdx = idx >= 0 ? idx : null;
+  _r1Locked = false;                     // 本轮下一题，解锁判分
+  state.pickedAnswer        = null;
+  state.showAnswerOnDisplay = false;
+  state.showScoresOnDisplay = false;
+  save(); render();
+  if (state.tts.autoRead) r1ReadQ(); else { startTimer(state.r1.timerSec * 1000, 1); cdSpoken.clear(); }
+}
+
 function r1InitDeck() { initCardDeck(1); render(); }
 function r2InitDeck() { initCardDeck(2); render(); }
 function r4InitDeck() { initCardDeck(4); render(); }
@@ -1745,13 +1874,13 @@ function doFlipCard(id) {
   const round = state.cardFlip.context?.round;
 
   // 预加载题目
-  if (round === 1 && card.qId != null) {
-    const idx = state.questions.findIndex(q => q.id === card.qId);
-    if (idx >= 0) {
-      _r1Locked = false;   // 翻出新题，解锁判分
-      state.r1.currentQIdx = idx;
-      if (!state.r1.usedQIds.includes(card.qId)) state.r1.usedQIds.push(card.qId);
-    }
+  if (round === 1 && card.qIds?.length) {
+    _r1Locked = false;   // 翻出新一轮，解锁判分
+    state.r1.turnQIds   = card.qIds;
+    state.r1.turnSubIdx = 0;
+    const idx = state.questions.findIndex(q => q.id === card.qIds[0]);
+    state.r1.currentQIdx = idx >= 0 ? idx : null;
+    card.qIds.forEach(qid => { if (!state.r1.usedQIds.includes(qid)) state.r1.usedQIds.push(qid); });
   } else if (round === 4 && card.imageKey != null) {
     const idx = state.questions.findIndex(q => q.imageKey === card.imageKey);
     if (idx >= 0) {
@@ -1795,7 +1924,13 @@ function r2Init() {
   if (!requireReady(2, { needDraw:true })) return;   // 现按赛前抽签顺序逐队上场
   if (state.roundRulesDismissed) delete state.roundRulesDismissed[2];  // 规则重新展示朗读
   initR2(); switchPanel(2);
-  if (!initCardDeck(2)) { alert('翻牌牌组生成失败。请检查「翻牌选题」是否被关闭。'); return; }
+  if (!initCardDeck(2)) {
+    alert('翻牌牌组生成失败——池子里抽不出符合配置的题。\n\n'
+        + `${drawShortageDetail(2)}\n\n`
+        + '位置：设置 → 各环节抽题配置，改题型/每轮题数，或导入题量更足的题库。');
+    return;
+  }
+  warnIfDeckShort(2);
   render();
 }
 function r2SetMem(i) { state.r2.currentMemberIdx = i; save(); render(); }
@@ -1822,9 +1957,9 @@ function r2ReadQ() {
   });
 }
 
-// 翻牌上场后：装载本队一轮题，展示并读第 1 题
+// 翻牌上场后：展示并读第 1 题
+// 本队这一轮的题已由 confirmFlip() 从翻开的牌上装载（turnQIdxs/qNum/currentQIdx）
 function r2BeginTurn() {
-  r2StartTurn();                       // shared.js：turnQIdxs / qNum=0 / currentQIdx
   _r2Locked = false;                   // 新题解锁
   state.r2.currentMemberIdx = null;    // 每题必须重新选队员
   state.pickedAnswer = null;
@@ -1929,34 +2064,79 @@ function r2NextTeam() {
   save(); render();
 }
 
+// ── 单卡翻牌动画（R3/R5「出题」用）────────────────
+// R1/2/4 靠多张牌里挑一张触发翻牌；R3/R5 题目本就顺序/主持人指定出，不用选牌，
+// 但仍要有「一张牌」等主持人点【出题】才翻开的观感，与其它环节保持一致。
+// 流程：先回到牌面朝下（哪怕上一题还在，也先盖住）→ 停一拍确保画面已渲染出
+// 「朝下」→ 翻开触发 CSS 过渡 → 过渡播完（.7s）才真正出题/朗读。
+function playTurnCardFlip(round, onRevealed) {
+  state.turnCard = { round, revealed: false };
+  state.displayMode = 'turncard';
+  state.showAnswerOnDisplay = false;
+  save(); render();
+  setTimeout(() => {
+    if (state.currentRound !== round) return;   // 期间已切走环节，别继续
+    state.turnCard.revealed = true;
+    save(); render();
+  }, 300);
+  setTimeout(() => {
+    if (state.currentRound !== round) return;
+    state.displayMode = 'question';
+    save();
+    onRevealed();
+    render();
+  }, 1100);
+}
+
 // ── R3 擂台抢答 ───────────────────────────────────
+// 本次抢答判分锁：一次锁定（locked）只能被判一次分。人工点「手动判对/判错/超时」
+// 和倒计时归零触发的自动超时（r3AutoTimeout）可能在极窄的时间窗口里撞上同一次
+// 锁定——谁先跑到就把锁设 true，另一个立即放弃，避免同一队被重复扣/加分。
+let _r3Locked = false;
 function r3Init() {
   if (!requireReady(3, { needDraw:false })) return;   // R3 抢答，不依赖出场顺序
   if (state.roundRulesDismissed) delete state.roundRulesDismissed[3];  // 规则重新展示朗读
-  initR3(); switchPanel(3); render();
+  // 先 switchPanel 再 initR3：switchPanel 对非翻牌环节会把 displayMode 拨回
+  // 'question'，必须让 initR3()（设 'turncard'）后落笔，否则单卡等待画面被盖掉。
+  switchPanel(3); initR3(); render();
 }
 function r3StartQ() {
-  const used = state.r3.usedQIds;
-  const pool = state.questions.filter(q => q.round === 3 && !used.includes(q.id));
-  if (!pool.length) return alert('第三环节题库已用完');
-  const q   = pool[0];
-  const idx = state.questions.indexOf(q);
-  used.push(q.id); save();
-  r3StartQuestion(idx, () => render());
-  render();
+  const { turns, types } = getRoundCfg(3);
+  // 抢答按「已出题数」卡上限：turns 即本环节计划出多少题（0=不限，出到池子空）
+  if (turns > 0 && state.r3.usedQIds.length >= turns) {
+    return alert(`本环节计划出 ${turns} 题，已全部出完。\n\n`
+               + '要继续出题请到 设置 → 擂台抢答出题配置，把「出题数」调大。');
+  }
+  // 从扁平题型池随机抽（types 里写 any 就是不限题型），抽走的全场不再重复
+  const qIds = drawQuestionIds(types);
+  if (!qIds) {
+    const TN = {any:'任意题型',single:'单选题',multi:'多选题',fill:'填空题',fill_multi:'多空题',judge:'判断题'};
+    return alert('题库里已经抽不出符合配置的题了。\n\n'
+      + types.map(t => `  · ${TN[t]||t}：池子里还剩 ${poolAvailable(t).length} 道`).join('\n')
+      + '\n\n可到 设置 → 擂台抢答出题配置 改题型，或导入更大的题库。');
+  }
+  markQIdsUsed(qIds);
+  state.r3.usedQIds.push(qIds[0]);
+  save();
+  const idx = state.questions.findIndex(q => q.id === qIds[0]);
+  _r3Locked = false;   // 新题，解锁判分
+  playTurnCardFlip(3, () => r3StartQuestion(idx, () => render()));
 }
 function r3SkipQ() {
   state.r3.buzzState = 'idle'; state.r3.currentQIdx = null; stopTimer(); save(); render();
 }
 function r3SetMem(i) { r3SelectMember(i); render(); }
 function doR3(correct) {
+  if (_r3Locked) return;   // 防重复判分（可能与自动超时撞在一起）
   const ev = r3Score(correct);
   if (!ev) return alert('请先选择回答队员');
+  _r3Locked = true;
   stopTimer(); cdSpoken.clear();
   state.showAnswerOnDisplay = true;
   state.showScoresOnDisplay = true;
   save(); render();
-  // TTS 播报成绩
+  // TTS 播报成绩。答对/答错到此都结束，不自动往下走——记分牌留在大屏上，
+  // 主持人看完手动点【出题】进下一题，或（答错时）点【开放补抢】换下一队抢。
   const team = state.teams.find(t => t.id === ev.teamId);
   const memberName = ev.memberName || `队员${ev.memberIdx+1}`;
   const total = teamTotal(team);
@@ -1966,15 +2146,19 @@ function doR3(correct) {
   speak(resultText);
 }
 function doR3Supp() { r3OpenSupplement(); render(); }
-/** 主持人手动点"超时"按钮：判分同 r3Timeout()，但由 announceScore 播报 */
+/** 主持人手动点"超时"按钮：判分同自动超时，记分牌留在大屏上等主持人手动继续 */
 function doR3Timeout() {
-  r3Timeout(false);      // skipAnnounce=false → 走 announceScore 的 timeout 话术
-  r3ResetBuzz();
+  if (_r3Locked) return;   // 防重复判分（可能与自动超时撞在一起）
+  _r3Locked = true;
+  const ev = r3Timeout();   // skipAnnounce 默认 true，这里自己播报
   expireTimer();
+  if (!ev) { render(); return; }
   render();
+  speak(`${ev.teamName}，作答超时，扣${scoreToSpeech(Math.abs(ev.delta))}`);
 }
 function doR3Reset() {
   r3ResetBuzz();
+  _r3Locked = false;   // 主持人手动重置，解开判分锁
   stopTimer(); save(); render();
 }
 
@@ -2060,14 +2244,23 @@ function doR4Score() {
 function r5Init() {
   if (!requireReady(5)) return;
   if (state.roundRulesDismissed) delete state.roundRulesDismissed[5];  // 规则重新展示朗读
-  initR5(); switchPanel(5); render();
+  // 先 switchPanel 再 initR5：理由同 r3Init。
+  switchPanel(5); initR5(); render();
 }
-function r5SetTheme(i) { r5StartTheme(i); startTimer(state.r5.timerSec*1000, 5); cdSpoken.clear(); render(); }
+// 「出题」= 揭晓令题：先翻单卡动画，动画播完才真正切令题、报出题目、起计时。
+function r5RevealTheme(i) {
+  playTurnCardFlip(5, () => {
+    r5StartTheme(i);
+    startTimer(state.r5.timerSec * 1000, 5);
+    cdSpoken.clear();
+  });
+}
+function r5SetTheme(i) { r5RevealTheme(i); }
 function r5NextTheme() {
   const themes = state.questions.filter(q=>q.round===5&&q.type==='theme');
   const ni = state.r5.currentThemeIdx + 1;
   if (ni >= themes.length) return alert('飞花令全部令题已完成！');
-  r5StartTheme(ni); startTimer(state.r5.timerSec*1000, 5); cdSpoken.clear(); render();
+  r5RevealTheme(ni);
 }
 function r5DoValid(teamId) {
   const ans = prompt('有效内容（留空则不参与查重）：');
@@ -2104,6 +2297,22 @@ function r5DoValid(teamId) {
   startTimer(state.r5.timerSec*1000, 5); cdSpoken.clear(); render();
 }
 function r5DoElim(teamId) { r5Eliminate(teamId); render(); }
+/**
+ * 点参考答案列表里的一条＝判「当前该轮到的队伍」答对该条。
+ * 大屏上已被别的队用过的选项会被禁用，正常操作不会点到重复项；
+ * 这里的 duplicate 分支只是兜底（比如极快连点撞上了）。
+ */
+function r5PickAnswer(answer) {
+  const tOrder = state.r5.teamOrder.length ? state.r5.teamOrder : state.teams.map(t => t.id);
+  const curId  = tOrder[state.r5.currentTurnIdx];
+  if (curId == null || !(state.r5.activeTeams || []).includes(curId)) {
+    return alert('当前没有正在作答的队伍，无法记分。');
+  }
+  const r = r5ValidAnswer(curId, answer);
+  if (!r) return;
+  if (r.duplicate) { alert('这条参考答案刚被占用了，请换一条或点【出局】。'); render(); return; }
+  startTimer(state.r5.timerSec * 1000, 5); cdSpoken.clear(); render();
+}
 function r5ManualWinner() {
   const active = state.r5.activeTeams || [];
   if (!active.length) return alert('无活跃队伍');
@@ -2240,8 +2449,10 @@ function openSettings() {
     const el = document.getElementById('s-rules-' + rr);
     if (el) el.value = (state.roundRules && state.roundRules[rr] != null) ? state.roundRules[rr] : '';
   }
+  renderDrawCfgEditors();
   refreshPrepBgUI();
   refreshQuestionBgUI();
+  renderR4ImageEditors();
   document.getElementById('s-tts-engine').value  = state.tts.engine || 'auto';
   document.getElementById('s-tts-url').value     = state.tts.serverUrl || '';
   refreshTTSStatus();
@@ -2363,6 +2574,175 @@ function refreshQuestionBgUI() {
   if (!prev) return;
   if (state.questionBg) { prev.src=state.questionBg; prev.style.display=''; clr.style.display=''; }
   else { prev.removeAttribute('src'); prev.style.display='none'; clr.style.display='none'; }
+}
+
+// ── 各环节抽题配置（个人必答 / 团队共答 / 擂台抢答 通用）──────────
+// 题库是扁平题型池，不预分配环节；这里配「翻几轮 × 每轮几题 × 每题题型」，
+// 点各环节的【开始本环节】时按这份配置随机抽题，抽过的全场不再重复。
+const TYPE_OPTIONS = [
+  { v: 'any',        l: '任意题型' },
+  { v: 'judge',      l: '判断题' },
+  { v: 'single',     l: '单选题' },
+  { v: 'multi',      l: '多选题' },
+  { v: 'fill',       l: '填空题' },
+  { v: 'fill_multi', l: '多空题' },
+];
+const TYPE_LABEL = Object.fromEntries(TYPE_OPTIONS.map(o => [o.v, o.l]));
+
+/** 环节面板上的一行只读摘要：设置了什么 + 实际发了几轮（口径与设置面板一致） */
+function drawCfgSummary(round, actualCards) {
+  const cfg  = getRoundCfg(round);
+  const want = round === 2 ? (state.draw.teamOrder.length || state.teams.length) : cfg.turns;
+  const desc = `设置：${want}轮 × 每轮${cfg.perTurn}题（${cfg.types.map(t => TYPE_LABEL[t] || t).join('→')}）`;
+  if (actualCards == null) return desc;
+  const short = actualCards < want;
+  return desc + `　已发 <b>${actualCards}</b> 轮`
+    + (short ? `<span style="color:var(--yellow)">（题库只够这么多，已按池子上限发牌）</span>` : '');
+}
+
+/** 抽不到题时的统一诊断文案：逐题型报池子余量 */
+function drawShortageDetail(round) {
+  const cfg = getRoundCfg(round);
+  const uses = {};
+  cfg.types.forEach(t => { uses[t] = (uses[t] || 0) + 1; });
+  return Object.keys(uses).map(t =>
+    `  · ${TYPE_LABEL[t] || t}：每轮用 ${uses[t]} 道，池子里还剩 ${poolAvailable(t).length} 道`
+    + `　→ 最多支持 ${Math.floor(poolAvailable(t).length / uses[t])} 轮`
+  ).join('\n');
+}
+
+// turnsLabel=null 表示该环节轮数不可配（R2 固定每队一张牌）
+const DRAW_ROUNDS = [
+  { r: 1, name: '个人必答', turnsLabel: '翻牌轮数', turnsHint: '一位选手一轮，默认 20 轮＝5队×4人' },
+  { r: 2, name: '团队共答', turnsLabel: null,       turnsHint: '每队一张牌，轮数固定等于队伍数' },
+  { r: 3, name: '擂台抢答', turnsLabel: '出题数',   turnsHint: '本环节计划出几题；每题一张牌' },
+];
+
+function renderDrawCfgEditors() {
+  const box = document.getElementById('draw-cfg-editors');
+  if (!box) return;
+  box.innerHTML = DRAW_ROUNDS.map(({ r, name, turnsLabel, turnsHint }) => {
+    const cfg = getRoundCfg(r);
+    const turnsField = turnsLabel
+      ? `<label>${turnsLabel}
+           <input type="number" min="1" max="200" style="width:56px" value="${cfg.turns}"
+                  onchange="setRoundTurns(${r},this.value)">
+         </label>`
+      : `<span style="font-size:12px;color:var(--muted)">轮数＝队伍数（${state.teams.length}）</span>`;
+    const typeRows = cfg.types.map((t, i) => `
+      <div class="row" style="margin-top:4px">
+        <label style="min-width:56px">第${i+1}题</label>
+        <select onchange="setRoundType(${r},${i},this.value)">
+          ${TYPE_OPTIONS.map(o => `<option value="${o.v}"${o.v===t?' selected':''}>${o.l}</option>`).join('')}
+        </select>
+        <span style="font-size:11px;color:${poolAvailable(t).length?'var(--muted)':'var(--red)'}">池子里可用 ${poolAvailable(t).length} 道</span>
+      </div>`).join('');
+    return `<div style="margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border)">
+      <div style="font-weight:700;margin-bottom:4px">${name}</div>
+      <div class="row">
+        ${turnsField}
+        <label>每轮题数
+          <input type="number" min="1" max="6" style="width:50px" value="${cfg.perTurn}"
+                 onchange="setRoundPerTurn(${r},this.value)">
+        </label>
+        <span style="font-size:11px;color:var(--muted)">${turnsHint}</span>
+      </div>
+      ${typeRows}
+      <div style="font-size:11px;margin-top:4px" id="draw-cfg-hint-${r}"></div>
+    </div>`;
+  }).join('');
+  DRAW_ROUNDS.forEach(({ r }) => refreshDrawCfgHint(r));
+}
+
+function refreshDrawCfgHint(r) {
+  const el = document.getElementById('draw-cfg-hint-' + r);
+  if (!el) return;
+  const cfg  = getRoundCfg(r);
+  const max  = maxTurnsFor(r);
+  const want = r === 2 ? (state.draw.teamOrder.length || state.teams.length) : cfg.turns;
+  if (!max) {
+    el.textContent = '池子里已抽不出这些题型的题，本环节会开不起来';
+    el.style.color = 'var(--red)';
+    return;
+  }
+  const short = want > max;
+  el.textContent = short
+    ? `按现在的题库最多只能出 ${max} 轮，配置要 ${want} 轮 —— 会按 ${max} 轮发牌`
+    : `题库可支持 ${max} 轮，当前要 ${want} 轮，够用`;
+  el.style.color = short ? 'var(--yellow)' : 'var(--muted)';
+}
+
+function _ensureCfg(r) {
+  if (!state.roundCfg) state.roundCfg = {};
+  if (!state.roundCfg[r]) state.roundCfg[r] = { ...getRoundCfg(r) };
+  return state.roundCfg[r];
+}
+function setRoundTurns(r, v) {
+  const c = _ensureCfg(r);
+  c.turns = Math.max(1, Math.min(200, parseInt(v, 10) || 1));
+  save();
+  renderDrawCfgEditors();
+}
+function setRoundPerTurn(r, v) {
+  const c = _ensureCfg(r);
+  const n = Math.max(1, Math.min(6, parseInt(v, 10) || 1));
+  const old = getRoundCfg(r).types;
+  c.perTurn = n;
+  // 保留已选的题型，新增的位补「任意题型」，多出来的截掉
+  c.types = Array.from({ length: n }, (_, i) => old[i] || 'any');
+  save();
+  renderDrawCfgEditors();
+}
+function setRoundType(r, i, type) {
+  const c = _ensureCfg(r);
+  const types = getRoundCfg(r).types.slice();
+  types[i] = type;
+  c.types = types;
+  save();
+  renderDrawCfgEditors();   // 重刷各题型的可用数与轮数提示
+}
+
+// ── R4 场景图上传（图A~图E）────────────────────────
+const R4_IMAGE_KEYS = ['图A','图B','图C','图D','图E'];
+function renderR4ImageEditors() {
+  document.getElementById('r4img-editors').innerHTML = R4_IMAGE_KEYS.map(k => `
+    <div class="row" style="margin-top:8px;align-items:flex-start">
+      <div>
+        <label>${k}</label>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+          <button class="btn-ghost btn-sm" onclick="document.getElementById('r4img-file-${k}').click()">上传</button>
+          <button class="btn-ghost btn-sm" id="r4img-clear-${k}" onclick="clearR4Image('${k}')" style="display:none">清除</button>
+          <input type="file" id="r4img-file-${k}" accept="image/*" style="display:none" onchange="loadR4Image('${k}',this)">
+          <img id="r4img-preview-${k}" style="display:none;height:44px;border-radius:6px;border:1px solid var(--border,#1e3a5f);object-fit:cover">
+          <span id="r4img-hint-${k}" style="font-size:11px;color:var(--muted)"></span>
+        </div>
+      </div>
+    </div>`).join('');
+  R4_IMAGE_KEYS.forEach(refreshR4ImageUI);
+}
+function loadR4Image(key, input) {
+  const f = input.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = e => { setR4ImageFile(key, e.target.result); refreshR4ImageUI(key); render(); };
+  r.readAsDataURL(f);
+  input.value = '';
+}
+function clearR4Image(key) {
+  if (state.r4.imageFiles) delete state.r4.imageFiles[key];   // 回落到 images/图X.png 默认约定
+  save();
+  refreshR4ImageUI(key);
+  render();
+}
+function refreshR4ImageUI(key) {
+  const prev = document.getElementById(`r4img-preview-${key}`);
+  const clr  = document.getElementById(`r4img-clear-${key}`);
+  const hint = document.getElementById(`r4img-hint-${key}`);
+  if (!prev) return;
+  const isCustom = !!(state.r4.imageFiles?.[key]?.startsWith('data:'));
+  clr.style.display = isCustom ? '' : 'none';
+  prev.onload  = () => { prev.style.display = ''; hint.textContent = ''; };
+  prev.onerror = () => { prev.style.display = 'none'; hint.textContent = '未找到默认文件，请上传'; };
+  prev.src = getR4ImageSrc(key);
 }
 function forceHintClick() {
   _forceClicks++;
