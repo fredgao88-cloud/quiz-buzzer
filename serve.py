@@ -6,15 +6,29 @@
 # 用法：python serve.py [端口]   （默认 8080）
 import socket
 import sys
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 
 class NoCacheHandler(SimpleHTTPRequestHandler):
+    # 浏览器默认开 keep-alive 长连接。单线程 HTTPServer 下，一条长连接就能把
+    # 整个服务独占住 —— 控制台 + 大屏 + 局域网另一台机器同时连，必然互相卡死
+    # （现象：端口在监听，但所有请求超时、页面打不开）。改用 ThreadingHTTPServer
+    # 之后每条连接各占一个线程，互不阻塞。
+    protocol_version = 'HTTP/1.1'
+
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
         self.send_header('Pragma', 'no-cache')
         self.send_header('Expires', '0')
         super().end_headers()
+
+    def log_message(self, fmt, *args):
+        # Windows 控制台默认 GBK，请求里带中文路径（如 images/图A.png）时
+        # 默认的日志打印会抛 UnicodeEncodeError 把服务打挂。这里做兜底转义。
+        try:
+            super().log_message(fmt, *args)
+        except Exception:
+            pass
 
 
 def lan_ip():
@@ -37,6 +51,8 @@ if __name__ == '__main__':
     print(f'同局域网其他电脑访问： http://{ip}:{port}/index.html')
     print('比赛全程请勿关闭本窗口。')
     try:
-        HTTPServer(('0.0.0.0', port), NoCacheHandler).serve_forever()
+        srv = ThreadingHTTPServer(('0.0.0.0', port), NoCacheHandler)
+        srv.daemon_threads = True      # 关窗口时不被残留连接卡住
+        srv.serve_forever()
     except KeyboardInterrupt:
         pass

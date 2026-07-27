@@ -17,7 +17,28 @@ const BC_NAME     = 'rz_contest_channel_v3';
 
 const TEAM_COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7'];
 
-const ROUND_CAPS = { r1: 20, r2: 20, r3: null, r4: 10, r5: null };
+// ── 计分配置 ───────────────────────────────────────
+// 每题分值由【环节】决定，不再从题库读（题库的 score_correct/score_wrong 一律忽略）。
+// 赛制每天可能不同，所以全部放进 state.scoreCfg，在 设置 → 各环节计分 里改。
+// 这里只是「旧存档缺字段时的兜底默认值」，实际取值一律走 getScoreCfg()。
+//   correct/wrong —— 每题得分/扣分      perSpot —— R4 每找出一处的分
+//   valid/winner  —— R5 每条有效答案/擂主   cap —— 本环节每队封顶，null=不封顶
+const SCORE_CFG_DEFAULT = {
+  r1: { correct: 2.5,             cap: 20   },
+  r2: { correct: 5,               cap: 20   },
+  r3: { correct: 2, wrong: -2,    cap: null },
+  r4: { perSpot: 1,               cap: 10   },
+  r5: { valid: 1,   winner: 3,    cap: null },
+};
+
+/** 取某环节的计分配置，逐字段兜底（cap 允许为 null，故用 undefined 判断） */
+function getScoreCfg(roundKey) {
+  const d = SCORE_CFG_DEFAULT[roundKey] || {};
+  const c = state.scoreCfg?.[roundKey] || {};
+  const out = { ...d };
+  for (const k of Object.keys(d)) if (c[k] !== undefined) out[k] = c[k];
+  return out;
+}
 
 // 违规处罚分。都是对【行为】的处罚，与题目分值无关，因此不读 q.score_wrong
 //（那是「答错」的分值）。赛制若调整违规标准，改这里即可。
@@ -57,12 +78,14 @@ function defaultState() {
     prepBg: null,            // 赛前准备大屏背景图（整屏铺满）
     questionBg: null,        // 题目页大屏背景图（出题/翻牌/抽签等界面的底图）
     // 各环节规则说明（大屏翻牌选题时显示在上方窗口）。按环节号存，可自行维护文案。
+    // 文案里的数字一律用 {占位符}，显示/朗读前由 fillRuleVars() 按当前配置替换，
+    // 免得改了计分或倒计时，念出来的规则和实际判分对不上。可用占位符见 ruleVars()。
     roundRules: {
-      1: '一、每队选手依次上场，每人作答一题。\n二、主持人翻牌选题，题目当场揭晓。\n三、答对得 2.5 分，答错或超时不得分、不倒扣。\n四、每队本环节累计上限 20 分。\n五、每题限时 15 秒，倒计时结束即停止作答。',
-      2: '一、各队按抽签顺序依次上场，每队翻牌后连答 4 道题。\n二、每题由一名队员作答，作答队员现场指定。\n三、答对每题得 5 分，答错或超时不得分、不倒扣。\n四、每队本环节累计上限 20 分。\n五、每题限时 40 秒。',
-      3: '一、主持人出题并宣布「开始抢答」后，各队方可按抢答器。\n二、最先抢到的队伍作答，答对加 2 分，答错扣 2 分。\n三、抢答犯规（抢答口令前抢按）扣分并暂停一次抢答资格。\n四、本环节不设上限。',
-      4: '一、各队依次上场，在场景图中找出服务不规范之处。\n二、每找对一处得 1 分，每图至多 10 处。\n三、每队本环节累计上限 10 分。\n四、限时结束即停止作答，误报不倒扣。',
-      5: '一、各队围绕主题轮流说出符合要求的服务用语或要点。\n二、每答出一条有效内容得 1 分；本题擂主额外得 3 分。\n三、重复、不符或限时内答不出即淘汰出本题。\n四、本环节不设上限。',
+      1: '一、每队选手依次上场，每人连答 {题数} 题。\n二、听到「请某队队员某某翻牌」后 {翻牌秒数} 秒内翻牌选题，超时本环节不得分。\n三、答对每题得 {分值} 分，答错或超时不得分、不倒扣。\n四、每队本环节{上限}。\n五、每题限时 {秒数} 秒，倒计时结束即停止作答。',
+      2: '一、各队按抽签顺序依次上场，每队翻牌后连答 {题数} 道题。\n二、听到「请某队翻牌」后 {翻牌秒数} 秒内翻牌选题，超时本环节不得分。\n三、每题由一名队员作答，作答队员现场指定。\n四、答对每题得 {分值} 分，答错或超时不得分、不倒扣。\n五、每队本环节{上限}。\n六、每题限时 {秒数} 秒。',
+      3: '一、主持人出题并宣布「开始抢答」后，各队方可按抢答器。\n二、最先抢到的队伍作答，答对加 {分值} 分，答错扣 {扣分} 分。\n三、抢答犯规（抢答口令前抢按）扣分并暂停一次抢答资格。\n四、每题限时 {秒数} 秒，本环节{上限}。',
+      4: '一、各队依次上场，在场景图中找出服务不规范之处。\n二、每找对一处得 {分值} 分，每图至多 {处数} 处。\n三、每队本环节{上限}。\n四、限时 {秒数} 秒，时间到即停止作答，误报不倒扣。',
+      5: '一、各队围绕主题轮流说出符合要求的服务用语或要点。\n二、每答出一条有效内容得 {分值} 分；本题擂主额外得 {擂主分} 分。\n三、重复、不符或 {秒数} 秒内答不出即淘汰出本题。\n四、本环节{上限}。',
     },
     roundRulesDismissed: {}, // 规则朗读完毕后置 true，大屏据此自动关闭规则窗口
 
@@ -82,6 +105,10 @@ function defaultState() {
       2: { turns: 5,  perTurn: 4, types: ['multi', 'multi', 'fill_multi', 'fill_multi'] },
       3: { turns: 25, perTurn: 1, types: ['any'] },
     },
+
+    // 各环节计分（每题分值 + 每队封顶）。赛制按天调整就改这里，与题库无关。
+    // 字段含义见文件顶部 SCORE_CFG_DEFAULT。
+    scoreCfg: JSON.parse(JSON.stringify(SCORE_CFG_DEFAULT)),
 
     // ── 赛程控制 ────────────────────────────────
     currentRound: 0,         // 0=赛前, 1-5=对应环节
@@ -110,6 +137,7 @@ function defaultState() {
       currentQIdx:      null,
       usedQIds:         [],
       timerSec:         40,
+      flipTimerSec:     10,   // 翻牌倒计时：报完「请某队翻牌」后开始，0=不计时。与 R1 同规则
     },
 
     // ── 第三环节 擂台抢答 ────────────────────────
@@ -142,6 +170,11 @@ function defaultState() {
         '图D': 'images/图D.png',
         '图E': 'images/图E.png',
       },
+      // 找茬点在图上的位置：{ imageKey: { spotKey: {x, y} } }，x/y 是相对图片
+      // 【显示尺寸】的百分比（0~100），所以换分辨率、换屏幕都不用重标。
+      // 不写进 questions.json：题库是导入件，坐标是跟着本地图片走的现场配置。
+      // 在 设置 → ④识图找茬 → 场景图 → [标注找茬点] 里点图录入。
+      spotPos: {},
     },
 
     // ── 第五环节 服务飞花令 ──────────────────────
@@ -206,6 +239,14 @@ function defaultState() {
     showAnswerOnDisplay: false,
     // 选手所选的选项字母数组（如 ['B']）。大屏据此高亮：选对=绿、选错=红。
     // 揭晓正确答案（showAnswerOnDisplay）之前先只显示它，实现「先红后揭晓」的两段式。
+    // 环节收尾小结：控制台点/自动触发时写入，大屏据此弹柱状图浮层；null=不显示
+    // { round, rows:[{teamId,name,color,score,total}] }
+    roundSummary: null,
+
+    // 加/扣分动画信号：{teamId, delta, pulse}。pulse 每变一次，大屏在该队记分卡上
+    // 飘一次 ±N 并闪一下。用计数器而非布尔，连续两次同样的扣分也能各触发一次动画。
+    scorePulse: null,
+
     pickedAnswer: null,
     displayMode: 'question',     // question|scores|blank|cardflip|draw|turncard
 
@@ -322,7 +363,7 @@ function getTieGroups() {
 function applyTeamScore(teamId, roundKey, delta) {
   const team = getTeam(teamId);
   if (!team) return 0;
-  const cap     = ROUND_CAPS[roundKey];
+  const cap     = getScoreCfg(roundKey).cap;
   const current = team.scores[roundKey] || 0;
   let actual;
   if (cap == null || delta < 0) {
@@ -344,6 +385,35 @@ function setR4ImageFile(imageKey, path) {
   if (!state.r4.imageFiles) state.r4.imageFiles = {};
   state.r4.imageFiles[imageKey] = path;
   save();
+}
+
+// ── 找茬点坐标（大屏答对后在图上打标记用）──────────
+// x/y 是相对图片显示尺寸的百分比（0~100），换屏幕/换分辨率都不用重标。
+
+/** 取某张图上某个找茬点的坐标；未标注返回 null */
+function getR4SpotPos(imageKey, spotKey) {
+  return state.r4.spotPos?.[imageKey]?.[spotKey] || null;
+}
+
+function setR4SpotPos(imageKey, spotKey, x, y) {
+  if (!state.r4.spotPos) state.r4.spotPos = {};
+  if (!state.r4.spotPos[imageKey]) state.r4.spotPos[imageKey] = {};
+  state.r4.spotPos[imageKey][spotKey] = {
+    x: Math.round(Math.max(0, Math.min(100, x)) * 10) / 10,
+    y: Math.round(Math.max(0, Math.min(100, y)) * 10) / 10,
+  };
+  save();
+}
+
+function clearR4SpotPos(imageKey, spotKey) {
+  if (spotKey == null) delete state.r4.spotPos?.[imageKey];      // 整张图清空
+  else if (state.r4.spotPos?.[imageKey]) delete state.r4.spotPos[imageKey][spotKey];
+  save();
+}
+
+/** 这张图已标注了几个点（设置页提示用） */
+function r4SpotPosCount(imageKey) {
+  return Object.keys(state.r4.spotPos?.[imageKey] || {}).length;
 }
 
 // ── 持久化 ───────────────────────────────────────
@@ -1131,7 +1201,7 @@ function scoreR1(result, note = '') {
   const memberIdx = state.r1.currentMemberIdx;
   const qIdx      = state.r1.currentQIdx;
   const q         = qIdx != null ? state.questions[qIdx] : null;
-  const baseScore = q?.score_correct ?? 2.5;
+  const baseScore = getScoreCfg('r1').correct;   // 分值按环节配置，不读题库
 
   const isViolation = result === 'violation';
   const correct     = result === true;
@@ -1161,7 +1231,9 @@ function scoreR1(result, note = '') {
     ts:         Date.now(),
   };
   if (note) event.note = note;
-  logEvent(event);
+  // skipAnnounce：doR1() 随后会播一句更完整的（含队员名、总分、封顶说明）。
+  // 不跳过的话这里先播一句通用话术，紧接着被 doR1 的 speak 打断，白白抢一次麦。
+  logEvent(event, true);
   return event;
 }
 
@@ -1201,7 +1273,7 @@ function r2ScoreCurrent(correct) {
   if (!team) return null;
   const qIdx = state.r2.currentQIdx;
   const q    = qIdx != null ? state.questions[qIdx] : null;
-  const delta  = correct ? (q?.score_correct ?? 5) : 0;
+  const delta  = correct ? getScoreCfg('r2').correct : 0;   // 分值按环节配置，不读题库
   const actual = applyTeamScore(teamId, 'r2', delta);
   const mIdx = state.r2.currentMemberIdx;
   const event = {
@@ -1212,7 +1284,7 @@ function r2ScoreCurrent(correct) {
     reason: correct ? 'correct' : 'wrong',
     qId: q?.id, ts: Date.now(),
   };
-  logEvent(event);
+  logEvent(event, true);   // skipAnnounce：doR2() 随后播更完整的一句，同 R1
   (state.r2.turnResults = state.r2.turnResults || []).push({ correct, delta: actual });
   return event;
 }
@@ -1224,9 +1296,10 @@ function r2ScoreCurrent(correct) {
  * correct: string[] 正确选项集合
  * totalScore: 本题满分（默认5分）
  */
-function scoreR2Multi(teamId, selected, correctOptions, totalScore = 5) {
+function scoreR2Multi(teamId, selected, correctOptions, totalScore = null) {
   const team = getTeam(teamId);
   if (!team) return null;
+  totalScore = totalScore ?? getScoreCfg('r2').correct;   // 不传就用环节配置的每题分
   const q = state.r2.currentQIdx != null ? state.questions[state.r2.currentQIdx] : null;
 
   // 含任一错选则0分
@@ -1261,9 +1334,10 @@ function scoreR2Multi(teamId, selected, correctOptions, totalScore = 5) {
  * correctBlanks: { key: string }[] 每个空的正确答案
  * totalScore: 本题满分（默认5分）
  */
-function scoreR2FillMulti(teamId, blanks, correctBlanks, totalScore = 5) {
+function scoreR2FillMulti(teamId, blanks, correctBlanks, totalScore = null) {
   const team = getTeam(teamId);
   if (!team) return null;
+  totalScore = totalScore ?? getScoreCfg('r2').correct;   // 不传就用环节配置的每题分
   const q      = state.r2.currentQIdx != null ? state.questions[state.r2.currentQIdx] : null;
   const perBlank = totalScore / correctBlanks.length;
   let correct = 0;
@@ -1302,6 +1376,7 @@ function initR3() {
   state.r3.selectedMember  = null;
   state.r3.buzzPulse       = 0;
   state.r3.excludedTeams   = [];
+  state.r3.violatedTeams   = [];
   state.r3.currentReadText = '';
   state.showAnswerOnDisplay = false;
   state.showScoresOnDisplay = false;
@@ -1315,6 +1390,13 @@ function initR3() {
  * 出题：开始读题（TTS），读完后自动进入 armed 状态
  * qIdx: questions[] 中的索引
  * onArmed: callback，TTS 读完"开始抢答"后调用
+ *
+ * 抢答状态机（三段，按赛制定的）：
+ *   reading   正在念题干/选项 —— 按抢答器【完全忽略】，不扣分、不打断，
+ *             选手还没听完题就按纯属手滑或设备抖动，罚了不公平
+ *   prearm    题已念完、正在念「开始抢答」的空档 —— 按抢答器【判违规扣分】，
+ *             这一段才是真正的抢跑，防的就是听完题就疯狂砸按钮
+ *   armed     「开始抢答」念完 —— 第一个按下的锁定
  */
 function r3StartQuestion(qIdx, onArmed) {
   const q = state.questions[qIdx];
@@ -1325,17 +1407,18 @@ function r3StartQuestion(qIdx, onArmed) {
   state.r3.selectedTeam    = null;
   state.r3.selectedMember  = null;
   state.r3.excludedTeams   = [];   // 新题，重新允许所有队伍抢答
+  state.r3.violatedTeams   = [];   // 新题，违规记录清零（同一队同一题只罚一次）
   state.r3.currentReadText = q.stem || '';
   state.showAnswerOnDisplay = false;
   save();
 
   if (window.IS_CONTROL) {
-    const segs = [...buildQuestionSegments(q), '开始抢答'];
-    speakQueue(segs, () => {
-      state.r3.buzzState = 'armed';
+    // 分两段播：题干/选项一段，「开始抢答」单独一段 —— 中间那一刻切到 prearm，
+    // 抢跑判定窗口就精确地落在「题念完 → 口令念完」之间
+    speakQueue(buildQuestionSegments(q), () => {
+      state.r3.buzzState = 'prearm';
       save();
-      onArmed?.();
-      startTimer(state.r3.timerSec * 1000, 3);
+      r3SpeakGoAndArm(onArmed);
     });
   } else {
     onArmed?.();
@@ -1343,11 +1426,29 @@ function r3StartQuestion(qIdx, onArmed) {
   return true;
 }
 
+/** 念「开始抢答」，念完进 armed 并起计时。违规播报结束后也走这里（不重读整题） */
+function r3SpeakGoAndArm(onArmed) {
+  const arm = () => {
+    if (state.r3.currentQIdx == null) return;   // 期间已跳过本题
+    state.r3.buzzState = 'armed';
+    save();
+    onArmed?.();
+    startTimer(state.r3.timerSec * 1000, 3);
+  };
+  if (window.IS_CONTROL) speak('开始抢答', { onend: arm });
+  else arm();
+}
+
 /**
  * 尝试抢答（在 reading 状态按下 = 违规；armed 状态按下 = 成功）
  */
 function r3TryBuzz(teamId, onViolationDone) {
-  if (state.r3.buzzState === 'reading') {
+  // 念题正文期间：完全忽略，不扣分、不打断朗读
+  if (state.r3.buzzState === 'reading') return false;
+  // 违规播报进行中：忽略，否则按住不放会连扣
+  if (state.r3.buzzState === 'violating') return false;
+  // 题念完、口令还没念完 → 抢跑违规
+  if (state.r3.buzzState === 'prearm') {
     return r3EarlyBuzz(teamId, onViolationDone);
   }
   if (state.r3.buzzState !== 'armed') return false;
@@ -1370,52 +1471,53 @@ function r3TryBuzz(teamId, onViolationDone) {
 }
 
 /**
- * 违规抢答（读题期间按下抢答器）
+ * 抢跑违规：题已念完、「开始抢答」口令还没念完就按了抢答器。
+ *
+ * 两条防连扣的措施（此前按住不放会被键盘自动重复反复触发，实测连按 5 次扣了 10 分）：
+ *   1. 进入 'violating' 状态，播报期间的按键一律忽略
+ *   2. violatedTeams 记账，同一队同一题只罚一次
+ * 违规播完不重读整题（题本来就已经念完了），只重念一次「开始抢答」再开抢。
  */
 function r3EarlyBuzz(teamId, onDone) {
   const team = getTeam(teamId);
   if (!team) return false;
-  // 暂停 TTS
-  if (window.IS_CONTROL) stopSpeak();
+  if (!state.r3.violatedTeams) state.r3.violatedTeams = [];
+  if (state.r3.violatedTeams.includes(teamId)) return false;   // 本题已罚过，不重复扣
+  state.r3.violatedTeams.push(teamId);
+
+  if (window.IS_CONTROL) stopSpeak();          // 掐掉正在念的「开始抢答」
+  state.r3.buzzState = 'violating';            // 播报期间按键无效
   // 扣分：违规是行为处罚，用固定常量，不读题库分值
   const delta = applyTeamScore(team.id, 'r3', R3_VIOLATION_PENALTY);
-  const event = {
+  // 抢跑还要没收本题的抢答资格（与答错后不能再抢同一套机制）
+  if (!state.r3.excludedTeams) state.r3.excludedTeams = [];
+  if (!state.r3.excludedTeams.includes(teamId)) state.r3.excludedTeams.push(teamId);
+
+  logEvent({
     round: 3, teamId: team.id, teamName: team.name,
     correct: false, delta, reason: 'violation',
-    ts: Date.now(),
-  };
-  logEvent(event, true); // skipAnnounce
+    note: '抢答口令前抢按，本题失去抢答资格', ts: Date.now(),
+  }, true); // skipAnnounce：下面自己播
+
+  // 大屏：亮出记分牌，并给该队打一个扣分动画的信号（pulse 变化即触发一次动画）
+  state.showScoresOnDisplay = true;
+  state.scorePulse = { teamId: team.id, delta, pulse: (state.scorePulse?.pulse || 0) + 1 };
   save();
 
+  const resume = () => {
+    state.r3.buzzState = 'prearm';   // 回到抢跑判定窗口，再念一次口令
+    save();
+    r3SpeakGoAndArm(onDone);
+  };
   if (window.IS_CONTROL) {
-    speakQueue(
-      [`${team.name}，抢答违规，扣两分`],
-      () => resumeR3Reading(onDone)
-    );
+    speakQueue([
+      `${team.name}抢答违规，扣${scoreToSpeech(Math.abs(delta))}，本题失去抢答资格`,
+      '继续抢答',
+    ], resume);
   } else {
-    resumeR3Reading(onDone);
+    resume();
   }
   return true;
-}
-
-/** 违规播报完后继续读题 */
-function resumeR3Reading(onArmed) {
-  const qIdx = state.r3.currentQIdx;
-  const q    = qIdx != null ? state.questions[qIdx] : null;
-  if (!q) return;
-  state.r3.buzzState = 'reading';
-  save();
-  if (window.IS_CONTROL) {
-    const segs = [...buildQuestionSegments(q), '开始抢答'];
-    speakQueue(segs, () => {
-      state.r3.buzzState = 'armed';
-      save();
-      onArmed?.();
-      startTimer(state.r3.timerSec * 1000, 3);
-    });
-  } else {
-    onArmed?.();
-  }
 }
 
 /**
@@ -1430,8 +1532,9 @@ function r3Score(correct) {
 
   // 分值读题库配置，兜底 ±2（见 16.1 第 2 项）
   const q     = state.r3.currentQIdx != null ? state.questions[state.r3.currentQIdx] : null;
-  const delta = correct ? (q?.score_correct ?? 2) : (q?.score_wrong ?? -2);
-  applyTeamScore(team.id, 'r3', delta);
+  const sc3   = getScoreCfg('r3');                          // 分值按环节配置，不读题库
+  const nominal = correct ? sc3.correct : sc3.wrong;
+  const delta   = applyTeamScore(team.id, 'r3', nominal);   // 取实际入账（配了封顶时与名义值不等）
   team.memberScores[memberIdx] = (team.memberScores[memberIdx] || 0) + delta;
   const event = {
     round: 3, teamId: team.id, teamName: team.name,
@@ -1440,7 +1543,9 @@ function r3Score(correct) {
     qId: q?.id,
     fromBuzz: true, ts: Date.now(),
   };
-  logEvent(event);
+  // skipAnnounce：doR3() 随后播更完整的一句（含队员名、失去资格、总分）。
+  // 不跳过的话这里先播一句通用话术，紧接着被 doR3 的 speak 打断，白抢一次麦。
+  logEvent(event, true);
 
   if (!correct) {
     if (!state.r3.excludedTeams) state.r3.excludedTeams = [];
@@ -1450,10 +1555,10 @@ function r3Score(correct) {
   state.r3.buzzedTeam     = null;
   state.r3.selectedTeam   = null;
   state.r3.selectedMember = null;
-  if (correct) {
-    state.showAnswerOnDisplay = true;
-    state.showScoresOnDisplay = true;
-  }
+  state.showScoresOnDisplay = true;      // 加分扣分都亮记分牌，让动画有地方演
+  if (correct) state.showAnswerOnDisplay = true;
+  // 记分卡上飘 ±N 并闪一下（与抢跑违规同一套动画）
+  state.scorePulse = { teamId: team.id, delta, pulse: (state.scorePulse?.pulse || 0) + 1 };
   stopTimer();
   save();
   return event;
@@ -1503,7 +1608,7 @@ function r3Timeout(skipAnnounce = true) {
   const team = getTeam(state.r3.selectedTeam);
   if (!team) return null;
   const q     = state.r3.currentQIdx != null ? state.questions[state.r3.currentQIdx] : null;
-  const delta = applyTeamScore(team.id, 'r3', q?.score_wrong ?? -2);
+  const delta = applyTeamScore(team.id, 'r3', getScoreCfg('r3').wrong);
   const event = {
     round: 3, teamId: team.id, teamName: team.name,
     memberIdx: state.r3.selectedMember,
@@ -1513,12 +1618,14 @@ function r3Timeout(skipAnnounce = true) {
   logEvent(event, skipAnnounce);
   if (!state.r3.excludedTeams) state.r3.excludedTeams = [];
   if (!state.r3.excludedTeams.includes(team.id)) state.r3.excludedTeams.push(team.id);
-  // 判罚后回到 idle（与 r3Score 一致）：记分牌留在大屏上，等主持人看完手动【开放补抢】
+  // 判罚后回到 idle（与 r3Score 一致）；由调用方播报完再决定继续抢答还是结束本题
   state.r3.buzzState      = 'idle';
   state.r3.buzzedTeam     = null;
   state.r3.selectedTeam   = null;
   state.r3.selectedMember = null;
   state.showScoresOnDisplay = true;
+  // 记分卡上飘 -N 并闪一下（与答错、抢跑违规同一套动画）
+  state.scorePulse = { teamId: team.id, delta, pulse: (state.scorePulse?.pulse || 0) + 1 };
   save();
   return event;
 }
@@ -1596,11 +1703,13 @@ function scoreR4(teamIdx) {
   const team = getTeamByIdx(teamIdx);
   if (!team) return null;
   const q = state.r4.currentQIdx != null ? state.questions[state.r4.currentQIdx] : null;
-  // 每处分值读题库，兜底 1（此前硬编码 1，题库的 score_correct 是装饰性字段）
-  const perSpot = q?.score_correct ?? 1;
+  // 每处分值按环节配置，不读题库
+  const cfg4    = getScoreCfg('r4');
+  const perSpot = cfg4.perSpot;
   const found   = r4FoundCount();
   const raw     = found * perSpot;
-  const actual  = applyTeamScore(team.id, 'r4', Math.min(raw, ROUND_CAPS.r4));
+  const capped  = cfg4.cap == null ? raw : Math.min(raw, cfg4.cap);
+  const actual  = applyTeamScore(team.id, 'r4', capped);
   const event = {
     round: 4, teamId: team.id, teamName: team.name,
     correct: actual > 0, delta: actual, reason: 'spot',
@@ -1730,10 +1839,11 @@ function r5ValidAnswer(teamId, answer, opts = {}) {
   }
 
   state.r5.usedAnswers.push({ teamId, answer, ts: Date.now() });
-  applyTeamScore(team.id, 'r5', 1);
+  const validScore = getScoreCfg('r5').valid;
+  const gained     = applyTeamScore(team.id, 'r5', validScore);
   const event = {
     round: 5, teamId: team.id, teamName: team.name,
-    correct: true, delta: 1, reason: 'flower_valid',
+    correct: true, delta: gained, reason: 'flower_valid',
     answer, ts: Date.now(),
   };
   logEvent(event);
@@ -1774,11 +1884,11 @@ function r5SetWinner(teamId) {
   if (!team) return null;
   // 本令题已有擂主则不重复加分（防手动指定与"剩一队自动定擂主"重复触发）
   if ((state.r5.themeWinners || []).some(w => w.themeIdx === state.r5.currentThemeIdx)) return null;
-  applyTeamScore(team.id, 'r5', 3);
+  const gained = applyTeamScore(team.id, 'r5', getScoreCfg('r5').winner);
   state.r5.themeWinners.push({ themeIdx: state.r5.currentThemeIdx, teamId });
   const event = {
     round: 5, teamId: team.id, teamName: team.name,
-    correct: true, delta: 3, reason: 'flower_winner',
+    correct: true, delta: gained, reason: 'flower_winner',
     ts: Date.now(),
   };
   logEvent(event);
@@ -1878,6 +1988,7 @@ function _resetR3() {
   state.r3.buzzedTeam     = null;
   state.r3.selectedTeam   = null;
   state.r3.selectedMember = null;
+  state.r3.violatedTeams  = [];
 }
 
 function resetTeams() {
@@ -1957,6 +2068,56 @@ function setRoundRules(round, text) {
   if (!state.roundRules) state.roundRules = {};
   state.roundRules[round] = text || '';
   save();
+}
+
+// ── 规则文案占位符 ─────────────────────────────────
+// 规则文案里的分数、秒数以前是手打的，改了计分/倒计时配置就对不上，
+// 念出来和实际判分两回事。现在文案里写 {分值} {秒数} 这类占位符，
+// 显示和朗读前统一按当前配置替换 —— 大屏和控制台走的是同一个函数，不会各念各的。
+//
+// 未定义的占位符原样保留（当成普通文字），不会变成 undefined。
+
+/** 某环节可用的占位符 → 当前值。UI 的可用列表也从这里取，加字段不用两处改。 */
+function ruleVars(round) {
+  const r   = Number(round);
+  const key = 'r' + r;
+  const sc  = getScoreCfg(key);
+  const cfg = getRoundCfg(r);
+  const num = v => String(Math.round(v * 100) / 100);
+  const vars = {
+    '秒数':   String(state['r' + r]?.timerSec ?? ''),
+    // {上限} 给的是一句完整的话，不是光秃秃一个数字 —— 不封顶时若只替换数字，
+    // 模板里「累计上限 X 分」会念成「累计上限 不设上限 分」。只要数字用 {上限分}。
+    '上限':   sc.cap == null ? '不设上限' : `累计上限 ${num(sc.cap)} 分`,
+    '上限分': sc.cap == null ? '无上限' : num(sc.cap),
+    '队伍数': String(state.teams.length),
+  };
+  if (r <= 3) {
+    vars['题数'] = String(cfg.perTurn);
+    vars['轮数'] = r === 2 ? String(state.draw.teamOrder.length || state.teams.length) : String(cfg.turns);
+  }
+  if (r === 1 || r === 2 || r === 3) vars['分值'] = num(sc.correct);
+  if (r === 1 || r === 2) vars['翻牌秒数'] = String(state['r' + r].flipTimerSec ?? 0);
+  if (r === 3) vars['扣分'] = num(Math.abs(sc.wrong));      // 念「答错扣 2 分」，取绝对值更顺
+  if (r === 4) { vars['分值'] = num(sc.perSpot); vars['处数'] = String(R4_MAX_SPOTS); }
+  if (r === 5) { vars['分值'] = num(sc.valid);   vars['擂主分'] = num(sc.winner); }
+  return vars;
+}
+
+/** 把文案里的 {占位符} 换成当前配置值；未识别的原样留着 */
+function fillRuleVars(text, round) {
+  if (!text) return '';
+  const vars = ruleVars(round);
+  return String(text).replace(/\{([^{}]+)\}/g, (whole, name) => {
+    const v = vars[name.trim()];
+    return v === undefined ? whole : v;
+  });
+}
+
+/** 取某环节【已替换占位符】的规则文案，大屏与朗读都用这个 */
+function getRoundRulesText(round) {
+  const raw = state.roundRules?.[round];
+  return raw == null ? '' : fillRuleVars(String(raw), round).trim();
 }
 
 // =====================================================

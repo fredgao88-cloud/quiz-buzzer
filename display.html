@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -22,10 +22,12 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 #brand-text{display:none}
 #header .brand img{height:44px;border-radius:6px;object-fit:contain;filter:drop-shadow(0 2px 6px rgba(0,0,0,.7))}
 #header .spacer{flex:1}
-#round-tag{padding:5px 18px;border-radius:12px;font-size:14px;font-weight:700;background:#1e3a5fee;border:1px solid var(--accent);color:#93c5fd}
-#timer-ring-wrap{position:relative;width:52px;height:52px;flex-shrink:0}
-#timer-ring-wrap svg{position:absolute;inset:0;transform:rotate(-90deg);filter:drop-shadow(0 2px 6px rgba(0,0,0,.7))}
-#timer-ring-wrap .ring-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--green);text-shadow:0 2px 6px rgba(0,0,0,.9)}
+#round-tag{padding:8px 24px;border-radius:14px;font-size:clamp(17px,1.7vw,28px);font-weight:800;background:#1e3a5fee;border:2px solid var(--accent);color:#93c5fd}
+/* 倒计时：原来 52px 圆环配 16px 数字，投影上根本看不清。放大到近 3 倍，
+   svg 用 100% 跟随外框缩放，viewBox 不动所以描边比例不变。 */
+#timer-ring-wrap{position:relative;width:clamp(96px,9vw,150px);height:clamp(96px,9vw,150px);flex-shrink:0}
+#timer-ring-wrap svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);filter:drop-shadow(0 3px 10px rgba(0,0,0,.85))}
+#timer-ring-wrap .ring-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:clamp(32px,3.4vw,56px);font-weight:900;font-variant-numeric:tabular-nums;color:var(--green);text-shadow:0 3px 10px rgba(0,0,0,.95)}
 #timer-ring-wrap .ring-text.warn{color:var(--yellow)}
 #timer-ring-wrap .ring-text.danger{color:var(--red);animation:pulse .6s ease-in-out infinite}
 
@@ -33,14 +35,37 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 #main{display:flex;flex-direction:column;height:100vh;overflow:hidden}
 
 /* ── 题目区 ── */
-#q-area{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:28px 40px;position:relative;overflow:hidden}
-#q-stem{font-size:clamp(20px,3vw,36px);font-weight:700;line-height:1.65;text-align:center;max-width:900px;color:var(--text);text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.6)}
-#q-options{margin-top:22px;display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:860px;width:100%}
-.q-opt{padding:12px 20px;border-radius:10px;border:2px solid var(--border);background:var(--surface);font-size:18px;transition:all .3s}
+/* 题目区整体放大，让最后一排队员也能看清。
+   --qs 是自适应缩放系数：题目特别长时由 fitQuestionArea() 自动调小，防止溢出被裁掉。 */
+#q-area{--qs:1;flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:20px 32px;position:relative;overflow:hidden}
+#q-stem{font-size:calc(clamp(30px,4.4vw,62px) * var(--qs));font-weight:800;line-height:1.5;text-align:center;max-width:min(90vw,1500px);color:var(--text);text-shadow:0 3px 12px rgba(0,0,0,.9),0 0 26px rgba(0,0,0,.65)}
+#q-options{margin-top:calc(26px * var(--qs));display:grid;grid-template-columns:1fr 1fr;gap:calc(16px * var(--qs));max-width:min(90vw,1500px);width:100%}
+.q-opt{padding:calc(18px * var(--qs)) calc(28px * var(--qs));border-radius:12px;border:2px solid var(--border);background:var(--surface);font-size:calc(clamp(21px,2.3vw,38px) * var(--qs));font-weight:600;line-height:1.4;transition:all .3s}
 .q-opt.correct{background:#14532d55;border-color:var(--green);color:#86efac;transform:scale(1.02)}
 .q-opt.wrong{background:#7f1d1d55;border-color:var(--red);color:#fca5a5;transform:scale(1.02)}
-#q-answer-box{margin-top:18px;padding:14px 24px;border-radius:10px;background:#1e3a5f;border:2px solid var(--accent);font-size:20px;color:#93c5fd;text-align:center;max-width:860px;width:100%}
-#q-image{margin-top:18px;max-width:min(84vw,1100px);max-height:56vh;border-radius:12px;border:2px solid var(--border);object-fit:contain;background:#000}
+#q-answer-box{margin-top:calc(20px * var(--qs));padding:calc(16px * var(--qs)) calc(30px * var(--qs));border-radius:12px;background:#1e3a5f;border:2px solid var(--accent);font-size:calc(clamp(22px,2.5vw,40px) * var(--qs));font-weight:700;color:#93c5fd;text-align:center;max-width:min(90vw,1500px);width:100%}
+/* 外层 inline-block 会收缩到图片的实际显示尺寸，标记层的百分比坐标才对得准。
+   注意 #q-image 不能设 object-fit:contain + 固定宽高，否则图片在元素内留黑边、坐标会偏。 */
+#q-image-wrap{position:relative;display:inline-block;margin-top:18px;line-height:0}
+#q-image{display:block;max-width:min(84vw,1100px);max-height:56vh;border-radius:12px;border:2px solid var(--border);background:#000}
+#spot-marks{position:absolute;inset:0;pointer-events:none}
+/* 找对的点：绿圈 + 勾 + 序号，弹出动画 */
+.spot-mark{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;
+  width:clamp(38px,4.2vw,64px);height:clamp(38px,4.2vw,64px);border-radius:50%;
+  border:4px solid var(--green);background:#14532dcc;color:#86efac;
+  font-size:clamp(20px,2.4vw,34px);font-weight:900;line-height:1;
+  box-shadow:0 0 22px #22c55e99,0 0 46px #22c55e44;
+  animation:spotPop .5s cubic-bezier(.2,1.4,.4,1) both}
+.spot-mark .spot-no{position:absolute;top:-10px;right:-10px;min-width:22px;height:22px;border-radius:11px;
+  background:var(--green);color:#052e16;font-size:13px;font-weight:900;display:flex;align-items:center;justify-content:center;padding:0 5px;line-height:1}
+/* 公布答案时才亮的「没找到」点：红色虚线圈，不抢戏 */
+.spot-mark.missed{border-style:dashed;border-color:var(--red);background:#7f1d1d99;color:#fca5a5;box-shadow:0 0 16px #ef444466}
+.spot-mark.missed .spot-no{background:var(--red);color:#450a0a}
+@keyframes spotPop{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.2)}
+  60%{opacity:1;transform:translate(-50%,-50%) scale(1.18)}
+  100%{opacity:1;transform:translate(-50%,-50%) scale(1)}
+}
 #q-image-missing{margin-top:18px;padding:16px 28px;border-radius:10px;border:2px dashed var(--red);color:var(--red);font-size:18px;text-align:center}
 
 /* ── 抢答横幅 ── */
@@ -68,16 +93,45 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 .score-card .sc-rounds{font-size:11px;color:var(--muted);margin-top:4px}
 .score-card .sc-rank{position:absolute;top:6px;right:8px;font-size:12px;font-weight:700}
 
+/* ── 加/扣分动画（抢跑违规扣分等）── */
+.score-card{position:relative;overflow:visible}
+/* 卡片本体：红/绿闪一下并轻微放大 */
+.score-card.pulse-minus{animation:cardPunish .9s ease-out}
+.score-card.pulse-plus{animation:cardReward .9s ease-out}
+@keyframes cardPunish{
+  0%{transform:scale(1)}
+  12%{transform:scale(1.08);border-color:#ef4444;box-shadow:0 0 40px #ef4444cc,0 0 90px #ef444455;background:#3b0d0d}
+  55%{transform:scale(1.02);border-color:#ef4444;box-shadow:0 0 24px #ef444488;background:#2a0c0c}
+  100%{transform:scale(1)}
+}
+@keyframes cardReward{
+  0%{transform:scale(1)}
+  12%{transform:scale(1.08);border-color:#22c55e;box-shadow:0 0 40px #22c55ecc,0 0 90px #22c55e55;background:#0d3b1d}
+  100%{transform:scale(1)}
+}
+/* 飘字：从分数处向上飘并淡出 */
+.sc-float{position:absolute;left:0;right:0;top:38%;pointer-events:none;
+  font-size:clamp(30px,3.4vw,56px);font-weight:900;font-variant-numeric:tabular-nums;
+  text-shadow:0 3px 14px rgba(0,0,0,.9);animation:floatUp 1.6s cubic-bezier(.18,.9,.3,1) forwards}
+.sc-float.minus{color:#ef4444}
+.sc-float.plus{color:#22c55e}
+@keyframes floatUp{
+  0%{opacity:0;transform:translateY(10px) scale(.6)}
+  18%{opacity:1;transform:translateY(-6px) scale(1.25)}
+  40%{opacity:1;transform:translateY(-26px) scale(1)}
+  100%{opacity:0;transform:translateY(-84px) scale(.95)}
+}
+
 /* ── 翻牌动画 ── */
 #cardflip-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(160deg,#060e1e,#0a1a32);background-size:cover;background-position:center;z-index:5;gap:20px;padding:20px}
 #cardflip-area.show{display:flex}
 #cf-header{text-align:center}
-#cf-title{font-size:clamp(18px,2.5vw,30px);font-weight:800;color:var(--accent);letter-spacing:1px;text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.6)}
-/* 环节规则窗口：浮在屏幕正中央 */
-#cf-rules{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:130;width:min(88vw,860px);background:rgba(15,31,54,.97);border:1px solid var(--accent);border-radius:16px;box-shadow:0 12px 60px #000a,0 0 0 100vmax rgba(3,8,18,.55);overflow:hidden}
-#cf-rules-title{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;font-weight:800;font-size:clamp(15px,1.8vw,22px);padding:10px 20px;letter-spacing:1px}
-#cf-rules-body{padding:14px 22px;font-size:clamp(13px,1.5vw,19px);line-height:1.8;color:var(--text);max-height:34vh;overflow:auto;white-space:pre-wrap}
-#cf-subtitle{font-size:clamp(12px,1.4vw,18px);color:var(--muted);margin-top:6px;text-shadow:0 1px 6px rgba(0,0,0,.85)}
+#cf-title{font-size:clamp(24px,3.2vw,44px);font-weight:800;color:var(--accent);letter-spacing:1px;text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.6)}
+/* 环节规则窗口：浮在屏幕正中央。选手要照着念/记，字必须够大 */
+#cf-rules{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:130;width:min(92vw,1180px);background:rgba(15,31,54,.97);border:2px solid var(--accent);border-radius:16px;box-shadow:0 12px 60px #000a,0 0 0 100vmax rgba(3,8,18,.55);overflow:hidden}
+#cf-rules-title{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;font-weight:800;font-size:clamp(20px,2.4vw,34px);padding:14px 26px;letter-spacing:1px}
+#cf-rules-body{padding:20px 30px;font-size:clamp(19px,2.1vw,32px);line-height:1.8;color:var(--text);max-height:56vh;overflow:auto;white-space:pre-wrap}
+#cf-subtitle{font-size:clamp(16px,1.8vw,26px);color:var(--muted);margin-top:8px;text-shadow:0 1px 6px rgba(0,0,0,.85)}
 .cf-grid{display:grid;gap:clamp(8px,1vw,14px)}
 .cf-card{border-radius:12px;perspective:900px}
 .cf-card-inner{position:relative;width:100%;height:100%;transition:transform .7s cubic-bezier(.4,.2,.2,1);transform-style:preserve-3d}
@@ -97,6 +151,43 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 #tc-subtitle{font-size:clamp(12px,1.4vw,18px);color:var(--muted);margin-top:6px;text-align:center;text-shadow:0 1px 6px rgba(0,0,0,.85)}
 
 /* ── 抽签动画 ── */
+/* 环节小结柱状图：z-index 必须高过 #prep-cover(100) —— 环节刚答完时没有题目，
+   赛前背景整屏层正好会被激活，低了就会被它整个盖住 */
+#summary-area{position:fixed;inset:0;z-index:120;display:none;flex-direction:column;align-items:center;justify-content:center;
+  gap:clamp(16px,3vh,40px);background:linear-gradient(160deg,#060e1e,#0a1a32);background-size:cover;background-position:center;padding:3vh 3vw}
+#summary-area.show{display:flex}
+#sum-title{font-size:clamp(20px,3vw,40px);font-weight:800;color:var(--accent);letter-spacing:2px;text-align:center;
+  text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.6)}
+/* 柱子以零基线为界：正分向上长，负分（擂台抢答可为负）向下长 */
+#sum-chart{display:flex;align-items:stretch;justify-content:center;gap:clamp(14px,3vw,54px);width:100%;flex:1;max-height:66vh}
+.sum-col{display:flex;flex-direction:column;align-items:center;height:100%;flex:0 1 clamp(90px,13vw,190px)}
+/* 绘图区单独一层：上下两区的百分比都以它为基准，两侧刻度才会一致。
+   队名/总分/名次放在它外面，不参与分高（否则会把上区挤矮，正负比例就错了）。 */
+.sum-plot{flex:1;width:100%;display:flex;flex-direction:column;align-items:center}
+.sum-upper{width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end}
+.sum-lower{width:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start}
+.sum-base{width:100%;height:2px;background:rgba(255,255,255,.28);flex-shrink:0}
+/* 柱子外壳定高（区域百分比），flex-shrink:0 保证不被数字标签挤压 —— 否则最高的柱子
+   会被压短，各柱高度就不再与分数成比例（踩过）。数字用绝对定位吸在柱顶/柱底外侧。 */
+.sum-bar-wrap{position:relative;width:100%;flex-shrink:0}
+.sum-val{position:absolute;left:0;right:0;font-size:clamp(18px,2.4vw,34px);font-weight:800;
+  text-shadow:0 2px 8px rgba(0,0,0,.8);white-space:nowrap;text-align:center}
+.sum-upper .sum-val{bottom:100%;margin-bottom:5px}
+/* 负分数字单独占一行（正分队伍留空占位），高度固定 —— 早先用绝对定位吸在柱底外侧，
+   柱子一短就会压住下面的队名 */
+.sum-negval{font-size:clamp(18px,2.4vw,34px);font-weight:800;line-height:1.15;min-height:1.15em;
+  text-shadow:0 2px 8px rgba(0,0,0,.8);margin-top:4px}
+.sum-bar{width:100%;height:100%;box-shadow:0 0 22px rgba(0,0,0,.45);
+  animation:sumGrow .75s cubic-bezier(.22,1,.36,1) both}
+.sum-bar.pos{border-radius:10px 10px 0 0;transform-origin:bottom}
+.sum-bar.neg{border-radius:0 0 10px 10px;transform-origin:top}
+@keyframes sumGrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.sum-name{font-size:clamp(15px,1.7vw,26px);font-weight:800;margin-top:10px;text-shadow:0 2px 8px rgba(0,0,0,.85)}
+/* 柱子画的是总分，这一行标本环节得分（带正负号，绿加红扣） */
+.sum-round{font-size:clamp(13px,1.4vw,21px);font-weight:800;margin-top:3px;text-shadow:0 1px 6px rgba(0,0,0,.85)}
+.sum-rank{font-size:clamp(11px,1.1vw,16px);color:var(--muted);margin-top:2px}
+.sum-col.top .sum-name{color:#fbbf24}
+
 #draw-area{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:24px;background:var(--bg);background-size:cover;background-position:center;z-index:5}
 #draw-area.show{display:flex}
 .draw-slots-row{display:flex;gap:16px;align-items:center;justify-content:center}
@@ -107,13 +198,13 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 /* ── 飞花令界面 ── */
 #flower-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);background-size:cover;background-position:center;z-index:5;padding:32px}
 #flower-area.show{display:flex}
-#flower-theme{font-size:clamp(24px,3vw,40px);font-weight:800;color:var(--accent);margin-bottom:8px;letter-spacing:1px;text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 24px rgba(0,0,0,.6)}
-#flower-turn{font-size:clamp(20px,2.5vw,32px);font-weight:700;padding:14px 40px;border-radius:14px;border:3px solid var(--green);color:var(--green);background:#14532dcc;animation:pulse-glow-g 1.2s ease-in-out infinite}
-#flower-used{font-size:clamp(16px,2vw,24px);color:var(--text);max-width:1000px;text-align:center;line-height:2.2;text-shadow:0 1px 6px rgba(0,0,0,.85)}
-#flower-used-label{font-size:clamp(14px,1.6vw,20px);color:var(--muted);text-shadow:0 1px 6px rgba(0,0,0,.85)}
+#flower-theme{font-size:clamp(32px,4vw,58px);font-weight:800;color:var(--accent);margin-bottom:10px;letter-spacing:1px;text-shadow:0 3px 12px rgba(0,0,0,.9),0 0 26px rgba(0,0,0,.65)}
+#flower-turn{font-size:clamp(26px,3.2vw,46px);font-weight:800;padding:18px 52px;border-radius:16px;border:4px solid var(--green);color:var(--green);background:#14532dcc;animation:pulse-glow-g 1.2s ease-in-out infinite}
+#flower-used{font-size:clamp(20px,2.4vw,34px);color:var(--text);max-width:min(90vw,1400px);text-align:center;line-height:2;text-shadow:0 1px 6px rgba(0,0,0,.85)}
+#flower-used-label{font-size:clamp(17px,1.9vw,28px);color:var(--muted);text-shadow:0 1px 6px rgba(0,0,0,.85)}
 
 /* 全屏无题提示 */
-#no-q-hint{font-size:clamp(16px,2vw,26px);color:var(--muted);text-align:center;padding:40px;text-shadow:0 1px 6px rgba(0,0,0,.85)}
+#no-q-hint{font-size:clamp(22px,2.6vw,40px);font-weight:700;color:var(--muted);text-align:center;padding:40px;text-shadow:0 2px 8px rgba(0,0,0,.85)}
 
 /* ── 赛前背景图（整屏铺满，遮住顶栏/分数栏等一切） ── */
 #prep-cover{position:fixed;inset:0;z-index:100;display:none;background:var(--bg) center/cover no-repeat}
@@ -159,7 +250,11 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
   <div id="q-area">
     <div id="no-q-hint">等待开始...</div>
     <div id="q-stem" style="display:none"></div>
-    <img id="q-image" style="display:none" alt="">
+    <!-- 图片外包一层：标记层按图片【显示尺寸】绝对定位，坐标用百分比，缩放自动跟随 -->
+    <div id="q-image-wrap" style="display:none">
+      <img id="q-image" alt="">
+      <div id="spot-marks"></div>
+    </div>
     <div id="q-image-missing" style="display:none"></div>
     <div id="q-options" style="display:none"></div>
     <div id="q-answer-box" style="display:none"></div>
@@ -205,6 +300,12 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
       </div>
     </div>
   </div>
+</div>
+
+<!-- 环节小结柱状图 overlay（控制台点【本环节小结】/环节自然打完时弹出） -->
+<div id="summary-area">
+  <div id="sum-title"></div>
+  <div id="sum-chart"></div>
 </div>
 
 <!-- draw overlay -->
@@ -253,6 +354,7 @@ function render() {
   document.getElementById('cardflip-area').classList.toggle('show', !!inCardFlip);
   document.getElementById('turncard-area').classList.toggle('show', !!inTurnCard);
   document.getElementById('flower-area').classList.toggle('show', state.currentRound === 5 && !inTurnCard);
+  updateRoundSummary();   // 环节小结柱状图，z-index 最高，盖在以上浮层之上
 
   if (inTurnCard) {
     updateTurnCard();
@@ -290,16 +392,86 @@ function updateQuestionBg() {
   }
 }
 
+// ── 环节小结柱状图 ────────────────────────────────
+// 数据（含排序）由控制台的 speakRoundSummary() 算好写进 state.roundSummary，这里只负责画。
+// 柱高画的是【总分】（观众看的是当前总排名），柱下另行标注【本环节得分】；
+// 总分可能为负（擂台抢答扣分），负分柱画在零基线下方。
+const SUM_ROUND_NAME = { 1:'第一环节 · 个人必答', 2:'第二环节 · 团队共答', 3:'第三环节 · 擂台抢答',
+                         4:'第四环节 · 识图找茬', 5:'第五环节 · 服务飞花令' };
+function updateRoundSummary() {
+  const area = document.getElementById('summary-area');
+  const sum  = state.roundSummary;
+  if (!sum || !sum.rows?.length) { area.classList.remove('show'); return; }
+  area.classList.add('show');
+  document.getElementById('sum-title').textContent =
+    `${SUM_ROUND_NAME[sum.round] || '本环节'} 结束 · 当前总分`;
+
+  const rows   = sum.rows;
+  const posMax = Math.max(0, ...rows.map(r =>  r.total));
+  const negMax = Math.max(0, ...rows.map(r => -r.total));
+  const hasNeg = negMax > 0;
+  // 正负两区按各自最大值分配高度 —— 这样两侧的「每分多少像素」完全相同，
+  // 否则负分区固定高度会让 -2 分的柱子看起来比实际严重得多。
+  // 下区留最少 8%，免得只有一个小负分时柱子细到看不见。
+  const range   = (posMax + negMax) || 1;
+  const negZone = hasNeg ? Math.max(8, negMax / range * 100) : 0;
+  const posZone = 100 - negZone;
+  const chart   = document.getElementById('sum-chart');
+  chart.classList.toggle('has-neg', hasNeg);   // 给负分标签让出下方空间
+
+  chart.innerHTML = rows.map((r, i) => {
+    const zoneMax = r.total >= 0 ? (posMax || 1) : negMax;
+    const ratio   = Math.abs(r.total) / zoneMax;
+    // 最高柱占本区 84%，上方留白给数字标签；至少 3% 让 0 分也留得下一条边
+    const h       = Math.max(3, ratio * 84);
+    const isTop = i === 0 && r.total > 0;
+    const grad  = `linear-gradient(180deg,${r.color},${r.color}66)`;
+    const pos   = r.total >= 0;
+    const val   = `<div class="sum-val" style="color:${r.color}">${fmtScore(r.total)}</div>`;
+    return `<div class="sum-col${isTop ? ' top' : ''}">
+      <div class="sum-plot">
+        <div class="sum-upper" style="height:${posZone}%">
+          ${pos ? `<div class="sum-bar-wrap" style="height:${h}%">${val}
+                     <div class="sum-bar pos" style="background:${grad}"></div>
+                   </div>` : ''}
+        </div>
+        <div class="sum-base"></div>
+        ${hasNeg ? `<div class="sum-lower" style="height:${negZone}%">
+          ${!pos ? `<div class="sum-bar-wrap" style="height:${h}%">
+                      <div class="sum-bar neg" style="background:${grad}"></div>
+                    </div>` : ''}
+        </div>` : ''}
+      </div>
+      ${hasNeg ? `<div class="sum-negval" style="color:${r.color}">${pos ? '' : fmtScore(r.total)}</div>` : ''}
+      <div class="sum-name" style="${isTop ? '' : `color:${r.color}`}">${isTop ? '🏆 ' : ''}${escapeHtml(r.name)}</div>
+      <div class="sum-round" style="color:${r.score < 0 ? 'var(--red)' : 'var(--green)'}">本环节 ${fmtSigned(r.score)}</div>
+      <div class="sum-rank">总分第 ${i + 1} 名</div>
+    </div>`;
+  }).join('');
+}
+
+/** 去掉小数末尾的 0：2.50 → 2.5，20.00 → 20 */
+function fmtScore(n) {
+  return String(Math.round((n || 0) * 100) / 100);
+}
+/** 本环节得分带符号显示：+12.5 / -3 / 0，一眼看出这一环节是加还是扣 */
+function fmtSigned(n) {
+  const v = Math.round((n || 0) * 100) / 100;
+  return (v > 0 ? '+' : '') + v;
+}
+
 // ── 环节规则说明浮层（各环节通用，浮在最上层）────────────
 // 由控制台把 roundRulesDismissed[round] 置 false（展示中）来亮窗，读完置 true 关窗。
 function updateRulesWindow() {
   const el = document.getElementById('cf-rules');
   const round = state.currentRound;
-  const txt = (state.roundRules && state.roundRules[round] != null)
-    ? String(state.roundRules[round]).trim() : '';
+  // 与控制台朗读走同一个函数，占位符按当前配置替换 —— 屏上写的和嘴上念的必须一致
+  const txt = getRoundRulesText(round);
   const showing = !!(state.roundRulesDismissed && state.roundRulesDismissed[round] === false);
-  // 已在展示题目时，规则窗口让位（避免盖住题目/抢答）
-  if (txt && showing && getActiveQIdx() == null) {
+  // 让位规则：已在展示题目时不弹（别盖住题目/抢答）；环节小结柱状图展示时也不弹
+  //（环节刚答完没有题目，规则窗的显示条件又成立了，会正好盖在小结图上）
+  const inSummary = !!state.roundSummary?.rows?.length;
+  if (txt && showing && !inSummary && getActiveQIdx() == null) {
     const RNAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令'];
     document.getElementById('cf-rules-title').textContent = (RNAMES[round] || '本环节') + ' · 规则说明';
     document.getElementById('cf-rules-body').textContent = txt;
@@ -320,7 +492,10 @@ function updatePrepCover() {
   const inTurnCard = mode === 'turncard' && state.turnCard?.round === state.currentRound;
   const inFlower   = state.currentRound === 5 && !inTurnCard;
   const hasQuestion = getActiveQIdx() != null;
-  const showCover = !inCardFlip && !inDraw && !inFlower && !inTurnCard && !hasQuestion;
+  // 环节小结柱状图正在展示时绝不能铺赛前背景 —— 它是 z-index:100 的整屏覆盖层，
+  // 会把小结图整个盖住（环节刚答完时正好没有题目，最容易撞上）。
+  const inSummary = !!state.roundSummary?.rows?.length;
+  const showCover = !inCardFlip && !inDraw && !inFlower && !inTurnCard && !hasQuestion && !inSummary;
   cover.classList.toggle('show', showCover);
   if (!showCover) { cover.style.backgroundImage = 'none'; return; }
   if (state.prepBg) {
@@ -386,24 +561,28 @@ function updateQuestion() {
   const ansBox= document.getElementById('q-answer-box');
   const img   = document.getElementById('q-image');
   const imgMiss = document.getElementById('q-image-missing');
+  // 图片的显示/隐藏一律走外层 #q-image-wrap（标记层是它的子元素，要跟着一起藏）。
+  // 早先这几处是直接 img.style.display='none'，改成包一层后这行内样式会残留，
+  // 轮到 spot 题时外层显示了、img 自己还是 none —— 图和标记全看不见。
+  const imgWrap = document.getElementById('q-image-wrap');
 
   // 赛前准备：整屏背景图由 #prep-cover 负责，这里只清空题目区
   if (state.currentRound === 0) {
     hint.style.display = 'none';
     stem.style.display = 'none'; opts.style.display = 'none'; ansBox.style.display = 'none';
-    img.style.display = 'none'; imgMiss.style.display = 'none';
+    imgWrap.style.display = 'none'; imgMiss.style.display = 'none';
     return;
   }
 
   if (qIdx == null) {
     hint.style.display = ''; hint.textContent = '等待出题...';
-    stem.style.display = 'none'; img.style.display = 'none'; imgMiss.style.display = 'none';
+    stem.style.display = 'none'; imgWrap.style.display = 'none'; imgMiss.style.display = 'none';
     opts.style.display = 'none'; ansBox.style.display = 'none'; return;
   }
   const q = state.questions[qIdx];
   if (!q) {
     hint.textContent = '题目加载失败'; hint.style.display = ''; stem.style.display='none';
-    img.style.display = 'none'; imgMiss.style.display = 'none'; return;
+    imgWrap.style.display = 'none'; imgMiss.style.display = 'none'; return;
   }
 
   hint.style.display = 'none';
@@ -411,18 +590,20 @@ function updateQuestion() {
   stem.textContent   = q.stem || '';
 
   // 找茬场景图（第四环节 spot 题）
+  const wrap = document.getElementById('q-image-wrap');
   if (q.type === 'spot' && q.imageKey) {
     const src = getR4ImageSrc(q.imageKey);
     imgMiss.style.display = 'none';
     img.onerror = () => {
-      img.style.display = 'none';
+      wrap.style.display = 'none';
       imgMiss.style.display = '';
       imgMiss.textContent = `未找到场景图文件：${src}（请将图片放入 images/ 目录）`;
     };
     if (img.getAttribute('src') !== src) img.src = src;
-    img.style.display = '';
+    wrap.style.display = '';
+    updateSpotMarks(q);
   } else {
-    img.style.display = 'none';
+    wrap.style.display = 'none';
     imgMiss.style.display = 'none';
   }
 
@@ -461,6 +642,50 @@ function updateQuestion() {
   } else {
     ansBox.style.display = 'none';
   }
+
+  fitQuestionArea();
+}
+
+// ── 题目区自适应缩放 ──────────────────────────────
+// 字号已按「最后一排也能看清」放大，但个别长题（题干 + 4 个长选项 + 答案框）仍可能
+// 撑破一屏。#q-area 是 overflow:hidden，撑破就直接被裁掉、选手看不到下半截。
+// 这里在内容溢出时按 5% 逐步缩小 --qs，最多缩到 65%，保证整题始终完整可见。
+function fitQuestionArea() {
+  const area = document.getElementById('q-area');
+  if (!area) return;
+  let s = 1;
+  area.style.setProperty('--qs', s);
+  // 留 4px 余量，避免亚像素误差导致无谓缩放
+  let guard = 0;
+  while (area.scrollHeight > area.clientHeight + 4 && s > 0.65 && guard++ < 12) {
+    s = Math.round((s - 0.05) * 100) / 100;
+    area.style.setProperty('--qs', s);
+  }
+}
+// 窗口尺寸变化（换投影仪/改分辨率）后重新适配
+window.addEventListener('resize', fitQuestionArea);
+
+// ── 找茬点标记 ────────────────────────────────────
+// 评委在控制台勾中某个找茬点（spotJudge[key]=true）→ 大屏在图上对应位置打一个绿圈✓。
+// 坐标来自 设置 里标注的 state.r4.spotPos（百分比），没标注的点不画，不影响计分。
+// 公布答案时，把没找到的点用红色虚线圈一并亮出来，方便点评。
+function updateSpotMarks(q) {
+  const box = document.getElementById('spot-marks');
+  if (!box) return;
+  const judged   = state.r4.spotJudge || {};
+  const reveal   = !!state.showAnswerOnDisplay;
+  const imageKey = q.imageKey;
+  box.innerHTML = (q.spots || []).map((s, i) => {
+    const pos = getR4SpotPos(imageKey, s.key);
+    if (!pos) return '';                       // 没标坐标就不画
+    const found = judged[s.key] === true;
+    if (!found && !reveal) return '';          // 没找到的点，公布答案前不剧透
+    return `<div class="spot-mark${found ? '' : ' missed'}"
+                 style="left:${pos.x}%;top:${pos.y}%"
+                 title="${escapeHtml(s.label || '')}">
+              ${found ? '✓' : '✗'}<span class="spot-no">${i + 1}</span>
+            </div>`;
+  }).join('');
 }
 
 // ── 抢答横幅 ─────────────────────────────────────
@@ -476,6 +701,9 @@ function updateBuzzBanner() {
 
   if (bs === 'armed') {
     showBuzzBanner('开始抢答！', 'show-armed');
+  } else if (bs === 'prearm') {
+    // 题已念完、口令还没念完 —— 这一段抢按判违规，屏上要明确警示
+    showBuzzBanner('请等待「开始抢答」口令 — 抢按扣分', 'show-armed');
   } else if (bs === 'locked' || bs === 'supplement') {
     const team = state.teams.find(t => t.id === state.r3.buzzedTeam);
     const name = team?.name || '?';
@@ -529,11 +757,38 @@ function updateScoresGrid() {
   document.getElementById('scores-grid').innerHTML = teams.map((t, i) => {
     const c = tColor(t);
     const total = teamTotal(t);
-    return `<div class="score-card${t.id===leadId?' first':''}" style="border-color:${c}88">
+    return `<div class="score-card${t.id===leadId?' first':''}" data-team="${t.id}" style="border-color:${c}88">
       <div class="sc-name" style="color:${c}">${escapeHtml(t.name)}</div>
       <div class="sc-total" style="color:${c}">${total}</div>
     </div>`;
   }).join('');
+  playScorePulse();
+}
+
+// ── 加/扣分动画 ──────────────────────────────────
+// 控制台在扣分/加分时把 state.scorePulse 的 pulse 计数 +1，这里检测到变化就在
+// 对应队伍的记分卡上飘一次 ±N 并闪一下。用计数器而非布尔：连续两次相同的扣分
+// 也能各触发一次动画。整块记分牌是每次 render 重绘的，所以动画要在重绘后补挂。
+let _lastScorePulse = -1;
+function playScorePulse() {
+  const sp = state.scorePulse;
+  if (!sp || !sp.pulse) return;
+  const isNew = sp.pulse !== _lastScorePulse;
+  _lastScorePulse = sp.pulse;
+  if (!isNew) return;                       // 同一次扣分，重绘时不重放
+
+  const card = document.querySelector(`#scores-grid .score-card[data-team="${sp.teamId}"]`);
+  if (!card) return;
+  const minus = (sp.delta || 0) < 0;
+  card.classList.add(minus ? 'pulse-minus' : 'pulse-plus');
+  const fly = document.createElement('div');
+  fly.className = 'sc-float ' + (minus ? 'minus' : 'plus');
+  fly.textContent = (minus ? '' : '+') + (Math.round((sp.delta || 0) * 100) / 100);
+  card.appendChild(fly);
+  setTimeout(() => {
+    card.classList.remove('pulse-minus', 'pulse-plus');
+    fly.remove();
+  }, 1700);
 }
 
 // ── 翻牌展示 ─────────────────────────────────────
