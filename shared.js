@@ -20,6 +20,14 @@ const TEAM_COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7'];
 // 扁平题型池里的全部题型（spot/theme 是单独上传的题源，不在其中）
 const POOL_TYPES = ['judge', 'single', 'multi', 'fill', 'fill_multi'];
 
+// 抢答发令音「滴」的默认参数。会场大小、音响好坏差别很大，做成可配
+//（设置 → ③擂台抢答 → 系统读题）。默认值按「有人声、有掌声的空旷会场」调：
+// 足够长到听清，又不至于拖慢发令节奏。
+// ⚠️ 必须定义在 defaultState() 之前 —— 它在 r3.beep 里引用本常量，
+// 而 defaultState() 在本文件加载时（let state = defaultState()）就会执行，
+// 定义晚了会撞上 TDZ，state 初始化直接抛异常、整个页面挂掉。
+const BEEP_DEFAULT = { ms: 450, gain: 0.9 };
+
 // ── 计分配置 ───────────────────────────────────────
 // 每题分值由【环节】决定，不再从题库读（题库的 score_correct/score_wrong 一律忽略）。
 // 赛制每天可能不同，所以全部放进 state.scoreCfg，在 设置 → 各环节计分 里改。
@@ -165,6 +173,7 @@ function defaultState() {
       // 系统读题：开启后整个环节自跑 —— 读规则 → 自动出题 → 报题 → 念「开始抢答」
       // → 三、二、一 → 滴（滴响才开抢）→ 判分后自动出下一题，直到出满题数。
       autoRead:        false,
+      beep:            { ...BEEP_DEFAULT },   // 发令音「滴」的时长与音量，见 getBeepCfg
       buzzState:       'idle',   // idle|reading|armed|locked
       buzzedTeam:      null,
       selectedTeam:    null,
@@ -767,38 +776,61 @@ function stopSpeak() {
 // 基准，绝不能因为「文件没加载出来」或「TTS 服务掉线」而不响。
 let _audioCtx = null;
 
+function getBeepCfg() {
+  const c = state.r3?.beep || {};
+  const ms   = Number(c.ms);
+  const gain = Number(c.gain);
+  return {
+    ms:   ms   > 0 ? Math.min(2000, ms)  : BEEP_DEFAULT.ms,
+    gain: gain > 0 ? Math.min(1, gain)   : BEEP_DEFAULT.gain,
+  };
+}
+
 /**
- * 播一声短促的「滴」，播完（或兜底到点）回调 onDone。
+ * 播一声「滴」，播完（或兜底到点）回调 onDone。
  * onDone 保证只触发一次：osc.onended 在部分浏览器不回调，故另加保底定时器。
+ *
+ * 音色用【方波 + 低八度正弦】而不是单一正弦：同样振幅下方波谐波丰富、听感亮得多，
+ * 在嘈杂会场里才穿得透；再叠一个低八度正弦补厚度，免得只有方波时又尖又薄。
  */
 function playBuzzBeep(onDone) {
-  const DUR = 0.18;               // 秒。太短听不清，太长会拖慢发令
+  const cfg = getBeepCfg();
+  const DUR = cfg.ms / 1000;
   let fired = false;
   const fire = () => { if (!fired) { fired = true; onDone?.(); } };
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) { setTimeout(fire, DUR * 1000); return; }
+    if (!Ctx) { setTimeout(fire, cfg.ms); return; }
     if (!_audioCtx) _audioCtx = new Ctx();
     if (_audioCtx.state === 'suspended') _audioCtx.resume();
 
     const t0   = _audioCtx.currentTime;
-    const osc  = _audioCtx.createOscillator();
-    const gain = _audioCtx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(1000, t0);
-    // 直接给满音量两端会「啪」地爆音，各留 10ms 渐入渐出
-    gain.gain.setValueAtTime(0, t0);
-    gain.gain.linearRampToValueAtTime(0.9, t0 + 0.01);
-    gain.gain.setValueAtTime(0.9, t0 + DUR - 0.01);
-    gain.gain.linearRampToValueAtTime(0, t0 + DUR);
-    osc.connect(gain).connect(_audioCtx.destination);
-    osc.start(t0);
-    osc.stop(t0 + DUR);
-    osc.onended = fire;
-    setTimeout(fire, DUR * 1000 + 150);      // 保底
+    const bus  = _audioCtx.createGain();
+    bus.connect(_audioCtx.destination);
+    // 两端各留 12ms 渐变去掉「啪」的爆音，中间全程保持满音量，听感才够实
+    bus.gain.setValueAtTime(0, t0);
+    bus.gain.linearRampToValueAtTime(cfg.gain, t0 + 0.012);
+    bus.gain.setValueAtTime(cfg.gain, t0 + Math.max(0.02, DUR - 0.02));
+    bus.gain.linearRampToValueAtTime(0, t0 + DUR);
+
+    const mk = (type, freq, level) => {
+      const o = _audioCtx.createOscillator();
+      const g = _audioCtx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, t0);
+      g.gain.setValueAtTime(level, t0);
+      o.connect(g).connect(bus);
+      o.start(t0);
+      o.stop(t0 + DUR);
+      return o;
+    };
+    mk('square', 880, 0.55);          // 主音，亮、穿透力强
+    const sub = mk('sine', 440, 0.45); // 低八度，补厚度
+    sub.onended = fire;
+    setTimeout(fire, cfg.ms + 150);   // 保底
   } catch (e) {
     console.warn('[rz] 发令音播放失败，按静音继续:', e?.message);
-    setTimeout(fire, DUR * 1000);
+    setTimeout(fire, cfg.ms);
   }
 }
 
