@@ -2856,18 +2856,20 @@ function doR3(correct) {
   state.showScoresOnDisplay = true;
   save(); render();
   const team = state.teams.find(t => t.id === ev.teamId);
-  const memberName = ev.memberName || `队员${ev.memberIdx+1}`;
+  // 播报只报队伍，不报队员：抢答的加减分记在【队伍】头上，个人分只是同时留一份
+  // 台账用于赛后评「最佳个人」。念成「队员1加两分」会让全场以为是给个人计分，
+  // 而且答题人是操作员现场点选的，念错人比不念更糟。
   const total = teamTotal(team);
   if (correct) {
     // 答对＝本题结束。手动模式等主持人点【出题】；系统读题模式自动接下一题
     r3AutoAfterEnd();
-    speak(`回答正确，${memberName}加${scoreToSpeech(Math.abs(ev.delta))}，${team.name}总分${scoreToSpeech(total)}`,
+    speak(`回答正确，${team.name}加${scoreToSpeech(Math.abs(ev.delta))}，总分${scoreToSpeech(total)}`,
           { onend: () => r3ScheduleAutoNext() });
     return;
   }
   // 答错：扣分 + 没收本题抢答资格，播完自动继续抢答（与抢跑违规同一套话术结构）
-  speak(`${team.name}回答错误，${memberName}扣${scoreToSpeech(Math.abs(ev.delta))}，`
-      + `本题失去抢答资格，${team.name}总分${scoreToSpeech(total)}`,
+  speak(`${team.name}回答错误，扣${scoreToSpeech(Math.abs(ev.delta))}，`
+      + `本题失去抢答资格，总分${scoreToSpeech(total)}`,
       { onend: r3ContinueOrEnd });
 }
 function doR3Supp() { r3OpenSupplement(); render(); }
