@@ -449,6 +449,11 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     <div id="r4-team-bar" class="q-box">
       <div id="r4-team-name" style="font-size:15px;font-weight:700"></div>
       <div id="r4-image-key" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
+      <!-- 代表本队指认的队员：可选可不选，选了只记进判分流水，不影响得分 -->
+      <div id="r4-member-hint" style="font-size:12px;color:var(--muted);margin-top:6px">
+        代表本队指认的队员（可不选，再点一次取消）：
+      </div>
+      <div id="r4-member-btns" class="row" style="margin-top:4px"></div>
     </div>
     <!-- 翻牌揭图 -->
     <div style="margin-bottom:10px">
@@ -1386,6 +1391,17 @@ function renderP4() {
         : `<span style="color:var(--muted)">待翻牌揭晓 —— 翻开那一刻才随机抽图</span>`)
       + `　<span style="color:var(--muted)">图池剩 ${leftN} 张</span>`
     : '';
+
+  // 队员按钮：可选可不选，点已选中的那个即取消
+  const mIdx = state.r4.currentMemberIdx;
+  document.getElementById('r4-member-btns').innerHTML = team
+    ? (team.members || []).map((m, i) =>
+        `<button class="member-btn${i === mIdx ? ' active' : ''}" onclick="r4SetMem(${i})">${escapeHtml(m)}</button>`
+      ).join('')
+    : '';
+  document.getElementById('r4-member-hint').innerHTML = mIdx != null
+    ? `代表本队指认的队员：<b style="color:${c}">${escapeHtml(team.members[mIdx] || '')}</b>（再点一次取消，不影响得分）`
+    : '代表本队指认的队员（可不选，不影响得分）：';
   document.getElementById('r4-progress').textContent = `${tIdx+1}/${orderedTeams().length} 队`;
 
   // 翻牌
@@ -2942,6 +2958,7 @@ function r4Prev() {
   if (state.r4.currentTeamIdx > 0) {
     _r4Locked = false;
     state.r4.currentTeamIdx--;
+    state.r4.currentMemberIdx = null;   // 换队 → 队员重选
     state.r4.currentQIdx = null;
     state.r4.spotJudge = {};
     state.r4.extraSpots = [];
@@ -2954,6 +2971,7 @@ function r4Next() {
   if (state.r4.currentTeamIdx < 4) {
     _r4Locked = false;
     state.r4.currentTeamIdx++;
+    state.r4.currentMemberIdx = null;   // 换队 → 队员重选
     state.r4.currentQIdx = null;
     state.r4.spotJudge = {};
     state.r4.extraSpots = [];
@@ -2969,6 +2987,11 @@ function r4Next() {
   }
 }
 function r4StartTimer() { startTimer(state.r4.timerSec*1000, 4); cdSpoken.clear(); }
+/** 选/取消代表本队指认的队员。点已选中的那个＝取消，因为这一项本就是可选的 */
+function r4SetMem(i) {
+  state.r4.currentMemberIdx = (state.r4.currentMemberIdx === i) ? null : i;
+  save(); render();
+}
 
 // ── R4 翻牌前报「请某队开始选题」────────────────────
 // 与 R1/R2 同一套响应式做法：只要进入「等待翻牌」状态就报一次 —— 不论是

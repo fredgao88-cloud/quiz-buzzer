@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-28.16';
+const APP_BUILD = '2026-07-28.17';
 
 const TEAM_COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7'];
 
@@ -199,6 +199,9 @@ function defaultState() {
     // 所以 draw 里没有 r4ImageMap —— 谁拿到哪张图，翻牌前谁也不知道。
     r4: {
       currentTeamIdx: 0,     // 指向 draw.teamOrder 的下标
+      // 代表本队作答/指认的队员，可不选（null）。找茬是整队一起找的，
+      // 谁来报不影响得分 —— 记下来只为在判分流水里留痕，不计入个人分。
+      currentMemberIdx: null,
       currentQIdx:    null,  // 当前图题在 questions[] 中的索引
       usedQIds:       [],    // 本场已抽走的图题 id，防止两队抽到同一张图
       timerSec:       60,
@@ -1966,9 +1969,10 @@ function r3ResetBuzz() {
 function initR4() {
   state.currentRound = 4;
   state.roundPhase   = 'running';
-  state.r4.currentTeamIdx = 0;
-  state.r4.currentQIdx    = null;
-  state.r4.usedQIds       = [];
+  state.r4.currentTeamIdx   = 0;
+  state.r4.currentMemberIdx = null;
+  state.r4.currentQIdx      = null;
+  state.r4.usedQIds         = [];
   state.r4.spotJudge      = {};
   state.r4.extraSpots     = [];
   state.showAnswerOnDisplay = false;
@@ -2030,8 +2034,14 @@ function scoreR4(teamIdx) {
   const raw     = found * perSpot;
   const capped  = cfg4.cap == null ? raw : Math.min(raw, cfg4.cap);
   const actual  = applyTeamScore(team.id, 'r4', capped);
+  // 队员可选可不选。选了只写进流水（谁代表本队指认的），【不加个人分】——
+  // 找茬是整队一起找的，把分算到某一个人头上会让「最佳个人」失真；
+  // 而且它是可选项，有的队选了有的没选，计分口径就不一致了。
+  const mIdx = state.r4.currentMemberIdx;
   const event = {
     round: 4, teamId: team.id, teamName: team.name,
+    memberIdx:  mIdx,
+    memberName: (mIdx != null ? team.members[mIdx] : '') || '',
     correct: actual > 0, delta: actual, reason: 'spot',
     foundCount: found, perSpot, qId: q?.id, ts: Date.now(),
   };
@@ -2360,6 +2370,7 @@ function resetContest() {
   _resetR3();
 
   state.r4.currentTeamIdx = 0;    state.r4.currentQIdx      = null;
+  state.r4.currentMemberIdx = null;
   state.r4.usedQIds       = [];   state.r4.spotJudge        = {};
   state.r4.extraSpots     = [];
 
