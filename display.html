@@ -92,6 +92,10 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 .score-card .sc-total{font-size:32px;font-weight:900;font-variant-numeric:tabular-nums}
 .score-card .sc-rounds{font-size:11px;color:var(--muted);margin-top:4px}
 .score-card .sc-rank{position:absolute;top:6px;right:8px;font-size:12px;font-weight:700}
+/* 抢答成功：改在记分牌上体现，不再往题目上盖横幅（题会被挡住，抢到的队没法看题作答）*/
+.score-card.buzzed{border-width:4px;animation:buzz-pop .45s ease-out}
+.score-card .sc-buzz{font-size:13px;font-weight:900;letter-spacing:1px;margin-top:3px}
+@keyframes buzz-pop{0%{transform:scale(.92)}55%{transform:scale(1.07)}100%{transform:scale(1)}}
 
 /* ── 加/扣分动画（抢跑违规扣分等）── */
 .score-card{position:relative;overflow:visible}
@@ -708,19 +712,12 @@ function updateBuzzBanner() {
       ? '听到「滴」声才可抢答 — 提前抢按扣分'
       : '请等待「开始抢答」口令 — 抢按扣分', 'show-armed');
   } else if (bs === 'locked' || bs === 'supplement') {
-    const team = state.teams.find(t => t.id === state.r3.buzzedTeam);
-    const name = team?.name || '?';
-    // 检查 buzzPulse 变化，触发动画
-    if (state.r3.buzzPulse !== _lastBuzzPulse) {
-      _lastBuzzPulse = state.r3.buzzPulse;
-      showBuzzBanner(`${name} 抢答成功！`, 'show-locked');
-      if (_buzzerHideTimer) clearTimeout(_buzzerHideTimer);
-      _buzzerHideTimer = setTimeout(() => {
-        if (state.r3.buzzState === 'locked') {
-          banner.textContent = `${name} 请作答`;
-        }
-      }, 2000);
-    }
+    // 抢答成功【不再在题目上盖横幅】——那块浮层正好压住题干和选项，
+    // 抢到的队伍还得盯着题作答，被挡住最难受。改为在下方记分牌上高亮该队
+    // （见 updateScoresGrid 的 buzzed 分支），题目区保持干净。
+    if (state.r3.buzzPulse !== _lastBuzzPulse) _lastBuzzPulse = state.r3.buzzPulse;
+    if (_buzzerHideTimer) { clearTimeout(_buzzerHideTimer); _buzzerHideTimer = null; }
+    hideBuzzBanner();
   } else {
     hideBuzzBanner();
   }
@@ -757,12 +754,20 @@ function updateScoresGrid() {
     if (tot > leadTotal) { leadTotal = tot; leadId = t.id; }
   }
 
+  // 抢答成功的队伍在记分牌上高亮标出（取代原先盖在题目上的大横幅）
+  const buzzed = (state.currentRound === 3
+                  && (state.r3.buzzState === 'locked' || state.r3.buzzState === 'supplement'))
+                 ? state.r3.buzzedTeam : null;
+
   document.getElementById('scores-grid').innerHTML = teams.map((t, i) => {
     const c = tColor(t);
     const total = teamTotal(t);
-    return `<div class="score-card${t.id===leadId?' first':''}" data-team="${t.id}" style="border-color:${c}88">
+    const hit = t.id === buzzed;
+    return `<div class="score-card${t.id===leadId?' first':''}${hit?' buzzed':''}" data-team="${t.id}"
+         style="border-color:${hit ? c : c + '88'}${hit ? `;box-shadow:0 0 34px ${c}99` : ''}">
       <div class="sc-name" style="color:${c}">${escapeHtml(t.name)}</div>
       <div class="sc-total" style="color:${c}">${total}</div>
+      ${hit ? `<div class="sc-buzz" style="color:${c}">抢答成功 · 请作答</div>` : ''}
     </div>`;
   }).join('');
   playScorePulse();

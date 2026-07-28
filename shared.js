@@ -1699,6 +1699,9 @@ function r3TryBuzz(teamId, onViolationDone) {
   state.r3.selectedMember = null;
   state.r3.buzzPulse      = (state.r3.buzzPulse || 0) + 1;
   state.r3.lastBuzzTeam   = teamId;
+  // 抢答成功改在记分牌上体现（大屏不再往题目上盖横幅，免得挡住抢到的队看题），
+  // 所以这里必须把记分牌亮出来，否则「谁抢到了」全场没有任何提示
+  state.showScoresOnDisplay = true;
   // 抢答窗口计时结束，重启 15 秒答题倒计时（见 4.3）
   startTimer(state.r3.timerSec * 1000, 3);
 
