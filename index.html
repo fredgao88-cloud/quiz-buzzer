@@ -455,7 +455,9 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
         <span style="font-size:12px;color:var(--muted)">翻牌揭题</span>
         <button class="btn-ghost btn-sm" onclick="r4InitDeck()">重置牌组</button>
       </div>
-      <div id="r4-flip-grid" class="flip-grid" style="grid-template-columns:repeat(5,1fr)"></div>
+      <!-- 不写死列数：写死 repeat(5,1fr) 会把 5 张牌拉满整行，牌面比个人必答大好几倍。
+           用 .flip-grid 默认的 auto-fill/76px，与①②环节的牌面一致（同 R2） -->
+      <div id="r4-flip-grid" class="flip-grid"></div>
     </div>
     <!-- 找茬打分 -->
     <div class="card-title">评委找茬打分（勾选已找到的违规点）</div>

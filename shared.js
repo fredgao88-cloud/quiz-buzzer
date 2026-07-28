@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-28.11';
+const APP_BUILD = '2026-07-28.13';
 
 const TEAM_COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7'];
 
@@ -1718,7 +1718,9 @@ function r3SpeakGoAndArm(onArmed, cue = '开始抢答') {
   const arm = () => {
     if (state.r3.currentQIdx == null) return;   // 期间已跳过本题
     state.r3.buzzState = 'armed';
-    state.r3.goCount   = null;                  // 倒数结束，倒计时牌交回答题计时
+    // goCount===0 表示「滴」正显示在倒计时牌上，别在这里抹掉 —— 开抢与滴声同刻发生，
+    // 抹了牌面就永远闪不出那个「滴」。由下面的定时器过 600ms 交回答题倒计时。
+    if (state.r3.goCount !== 0) state.r3.goCount = null;
     save();
     onArmed?.();
     startTimer(state.r3.timerSec * 1000, 3);
@@ -1728,8 +1730,16 @@ function r3SpeakGoAndArm(onArmed, cue = '开始抢答') {
     // 用阿拉伯数字而非「三二一」：预热缓存里存的就是 '1'~'10'，能直接命中，不必现合成
     speakQueue([cue, '3', '2', '1'], () => {
       state.r3.goCount = 0;   // 0 = 正在响「滴」，大屏据此把牌面切成绿色的「滴」
-      save();
-      playBuzzBeep(arm);
+      // ⚠️ 必须在滴声【响起的同一刻】开抢，不能等它播完。
+      // 滴声就是发令枪：选手听到就按。之前写成 playBuzzBeep(arm)，arm 是播完
+      // 才触发的回调 —— 那 450ms 里状态还是 prearm，谁跟着滴声按谁被判抢跑违规。
+      arm();
+      playBuzzBeep();         // 声音自己播完即可，流程不等它
+      // 「滴」在牌上留 600ms 再交回答题倒计时。只清自己那一次，
+      // 期间若已换题/重置（goCount 被别处改过）就不动，免得抹掉新状态。
+      setTimeout(() => {
+        if (state.r3.goCount === 0) { state.r3.goCount = null; save(); }
+      }, 600);
     }, seg => {
       // 把「现在念到几」同步到大屏倒计时牌：口令那段不是数字，牌面先清空待命
       const n = parseInt(seg, 10);
