@@ -947,6 +947,19 @@ function updateFlowerArea() {
     used.map((a,i)=>`${i+1}.${a.answer}`).join('  ') || '（暂无）';
 }
 
+// ── 向控制台报告本页代码版本 ──────────────────────
+// 只刷新了控制台、忘了刷新大屏是常事，结果大屏跑着旧逻辑，两个页面看起来却都正常。
+// 开页广播一次，另外应答控制台的 build-ping（控制台可能比大屏后开）。
+// 版本不一致时由控制台亮红字提示 —— 大屏是给观众看的，不在上面显示任何告警。
+try {
+  bc?.postMessage({ type: 'build', role: 'display', build: APP_BUILD });
+  bc?.addEventListener('message', e => {
+    if (e.data?.type === 'build-ping') {
+      bc.postMessage({ type: 'build', role: 'display', build: APP_BUILD });
+    }
+  });
+} catch (e) {}
+
 // ── 键盘：抢答键转发 + F 全屏 ──────────────────────
 // 大屏仍是只读页（自己绝不写 state），但必须接管抢答键：
 // 主持人常把大屏投到副屏、点一下它进全屏，键盘焦点就落在大屏窗口，

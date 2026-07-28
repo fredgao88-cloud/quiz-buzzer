@@ -217,6 +217,10 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
        互相广播状态，抢答会莫名其妙按不动。检测到就常驻红字，不给它藏起来的机会 -->
   <span id="dup-control-warn" class="badge badge-red" style="display:none"
         title="另一个控制台页面正在运行。两个控制台会互相覆盖状态、重复朗读，请只保留一个">⚠ 检测到多个控制台</span>
+  <!-- 大屏跑着旧代码时最难查：两个页面看起来都正常，只是其中一个逻辑是旧的 -->
+  <span id="stale-display-warn" class="badge badge-red" style="display:none"
+        title="大屏页加载的是旧代码，请在大屏窗口按 Ctrl+Shift+R 刷新">⚠ 大屏是旧版本，请刷新</span>
+  <span id="build-tag" style="font-size:11px;color:var(--muted)" title="代码版本。控制台与大屏必须一致"></span>
   <span id="round-badge" class="badge badge-blue">赛前准备</span>
   <button class="btn-ghost btn-sm" onclick="toggleShowScoresBTN()">大屏分数</button>
   <button class="btn-ghost btn-sm" onclick="openSettings()">设置</button>
@@ -4126,10 +4130,18 @@ speechSynthesis.onvoiceschanged = () => {
       // BroadcastChannel 又不会把消息发回给发送者。所以收到 'state' 就只有一个解释——
       // 另有一个控制台在写状态。这条对「还跑着旧代码、不会应答握手」的页面同样有效。
       else if (d.type === 'state') warn();
+      // 大屏报上来的代码版本：不一致说明它还跑着旧代码
+      else if (d.type === 'build' && d.build !== APP_BUILD) {
+        const el = document.getElementById('stale-display-warn');
+        if (el) { el.style.display = ''; el.title = `大屏版本 ${d.build}，控制台 ${APP_BUILD}。请在大屏窗口按 Ctrl+Shift+R 刷新`; }
+        console.warn(`[rz] 大屏页版本 ${d.build} 与控制台 ${APP_BUILD} 不一致 —— 大屏跑的是旧代码，请刷新大屏`);
+      }
     });
     hb.postMessage({ type: 'control-hello', id: myId });
+    hb.postMessage({ type: 'build-ping', build: APP_BUILD });   // 让已打开的大屏报一次版本
   } catch (e) {}
 })();
+document.getElementById('build-tag').textContent = 'v' + APP_BUILD;
 
 // ── 共享状态监听 ─────────────────────────────────
 onChange(() => render());
