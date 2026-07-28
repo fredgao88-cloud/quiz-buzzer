@@ -52,6 +52,20 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
    注意 #q-image 不能设 object-fit:contain + 固定宽高，否则图片在元素内留黑边、坐标会偏。 */
 #q-image-wrap{position:relative;display:inline-block;margin-top:18px;line-height:0}
 #q-image{display:block;max-width:min(84vw,1100px);max-height:56vh;border-radius:12px;border:2px solid var(--border);background:#000}
+
+/* ── 图题模式（第四环节）：字缩小，图铺满 ──
+   题干只是「请找出…」这类指令，用默认 62px 会吃掉大半个屏；答案清单同理。
+   图片尺寸也乘上 --qs：fitQuestionArea 是靠缩小 --qs 来消除溢出的，
+   若只有文字跟着缩、图片不缩，公布答案时（题干＋图＋答案框）会怎么缩都放不下。 */
+/* 记分牌亮着时给它让出高度（--scores-h 由 updateScoresBar 按实际高度写入），
+   否则它会盖住题目区下方的内容 */
+body.scores-on #q-area{padding-bottom:calc(var(--scores-h,0px) + 14px)}
+#q-area.img-mode{padding:8px 16px}
+body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
+#q-area.img-mode #q-stem{font-size:calc(clamp(15px,1.6vw,26px) * var(--qs));line-height:1.3;margin-bottom:calc(4px * var(--qs))}
+#q-area.img-mode #q-image-wrap{margin-top:calc(6px * var(--qs))}
+#q-area.img-mode #q-image{max-width:min(97vw,2200px);max-height:calc(84vh * var(--qs))}
+#q-area.img-mode #q-answer-box{margin-top:calc(6px * var(--qs));padding:calc(6px * var(--qs)) calc(14px * var(--qs));font-size:calc(clamp(13px,1.25vw,20px) * var(--qs));line-height:1.35;max-width:97vw}
 #spot-marks{position:absolute;inset:0;pointer-events:none}
 /* 找对的点：绿圈 + 勾 + 序号，弹出动画 */
 .spot-mark{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;
@@ -629,6 +643,9 @@ function updateQuestion() {
 
   // 找茬场景图（第四环节 spot 题）
   const wrap = document.getElementById('q-image-wrap');
+  // 图题模式：题干只是一句「请找出…」的指令，没必要占掉半屏 —— 字号压小，
+  // 把版面尽量让给图片。全场是靠看图找违规的，图越大越能看清细节。
+  document.getElementById('q-area').classList.toggle('img-mode', q.type === 'spot');
   if (q.type === 'spot' && q.imageKey) {
     const src = getR4ImageSrc(q.imageKey);
     imgMiss.style.display = 'none';
@@ -771,6 +788,12 @@ function hideBuzzBanner() {
 function updateScoresBar() {
   const bar = document.getElementById('scores-bar');
   bar.classList.toggle('visible', !!state.showScoresOnDisplay);
+  // 记分牌是贴底的 fixed 浮层，会盖住题目区下方的内容（找茬图的下半截、答案框）。
+  // 让 #q-area 按记分牌【实际高度】空出位置 —— 不写死数值：队伍数、字号、分辨率
+  // 都会改变它的高度，写死了换个场地就又盖上了。
+  document.body.classList.toggle('scores-on', !!state.showScoresOnDisplay);
+  document.documentElement.style.setProperty('--scores-h',
+    (state.showScoresOnDisplay ? bar.offsetHeight : 0) + 'px');
 }
 
 function updateScoresGrid() {

@@ -441,6 +441,7 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
       <button class="btn-primary" onclick="r4Init()">开始本环节</button>
       <button class="btn-ghost btn-sm" onclick="r4Prev()">上一队</button>
       <button class="btn-ghost btn-sm" onclick="r4Next()">下一队</button>
+      <button class="btn-warn btn-sm" onclick="r4ReadQ()">朗读题目</button>
       <button class="btn-warn btn-sm" onclick="r4StartTimer()">开始计时</button>
       <button class="btn-ghost btn-sm" onclick="doRoundSummary(4)" title="逐队播报本环节得分与总分，并亮出大屏计分板">本环节小结</button>
       <span id="r4-progress" style="color:var(--muted);font-size:12px"></span>
@@ -2463,7 +2464,10 @@ function doFlipCard(id) {
     } else if (round === 2) {
       r2BeginTurn();   // 翻牌上场 → 开始本队整轮（内部读题+计时）
     } else if (round === 4) {
-      startTimer(state.r4.timerSec*1000, 4); cdSpoken.clear();
+      // 与 R1 同一个开关：自动朗读开着就读题+「开始答题」后再起计时，
+      // 关掉则直接起计时（主持人自己念）
+      if (state.tts.autoRead) r4ReadQ();
+      else { startTimer(state.r4.timerSec*1000, 4); cdSpoken.clear(); }
     }
     render();
   }, 1500);
@@ -2929,6 +2933,7 @@ function r4Init() {
     return;
   }
   if (state.roundRulesDismissed) delete state.roundRulesDismissed[4];  // 规则重新展示朗读
+  _r4LastFlipPrompt = null;   // 重开本环节 → 第一队的「请某队开始选题」要重新报
   initR4(); switchPanel(4);
   if (!initCardDeck(4)) { alert('翻牌牌组生成失败。请检查「翻牌选题」是否被关闭。'); return; }
   render();
@@ -2964,6 +2969,38 @@ function r4Next() {
   }
 }
 function r4StartTimer() { startTimer(state.r4.timerSec*1000, 4); cdSpoken.clear(); }
+
+// ── R4 翻牌前报「请某队开始选题」────────────────────
+// 与 R1/R2 同一套响应式做法：只要进入「等待翻牌」状态就报一次 —— 不论是
+// 点【开始本环节】、【上一队】【下一队】，还是刷新页面后重新进来，都能补上。
+// 同一队只报一次（_r4LastFlipPrompt 记账），否则每次 render 都会重念。
+let _r4LastFlipPrompt = null;
+function r4AnnounceFlipPromptIfNeeded() {
+  if (!window.IS_CONTROL) return;
+  if (state.currentRound !== 4) { _r4LastFlipPrompt = null; return; }
+  if (state.cardFlip.context?.round !== 4) return;   // 场上不是本环节的牌组
+  if (state.displayMode !== 'cardflip') return;      // 不在等待翻牌
+  if (state.r4.currentQIdx != null) return;          // 已翻出题目，不再催场
+  // 环节规则还在念 / 还挂在屏上时先不催，等规则窗口关掉再说，免得两段语音打架
+  if (state.roundRulesDismissed?.[4] !== true) return;
+  const team = getTeamByIdx(state.r4.currentTeamIdx);
+  if (!team) return;
+  const key = String(state.r4.currentTeamIdx);
+  if (_r4LastFlipPrompt === key) return;
+  _r4LastFlipPrompt = key;
+  speak(`请${team.name}开始选题`);
+}
+
+/**
+ * 翻牌后朗读题目：念题干 →「开始答题」→ 起倒计时。
+ * 倒计时必须等这句念完才起：否则读题的十几秒全算在答题时间里，
+ * 各队实际找茬的时间会因题干长短而不同。
+ */
+function r4ReadQ() {
+  const q = state.r4.currentQIdx != null ? state.questions[state.r4.currentQIdx] : null;
+  if (!q) { r4StartTimer(); return; }
+  speakQueue([stemForSpeech(q.stem || ''), '开始答题'].filter(Boolean), r4StartTimer);
+}
 function r4ToggleSpot(key) {
   // 必须走 r4JudgeSpot()，它带单图 10 处的上限拦截；直接改 state 会绕过规则
   const next = !state.r4.spotJudge[key];
@@ -4081,10 +4118,12 @@ onChange(() => render());
 onChange(announceRulesIfNeeded);   // 进入翻牌选题时自动朗读环节规则并适时关窗
 onChange(r1AnnounceFlipPromptIfNeeded);   // 个人必答：等待翻牌时报「请某队队员某某翻牌」
 onChange(r2AnnounceFlipPromptIfNeeded);   // 团队共答：等待翻牌时报「请某队翻牌」（不带队员名）
+onChange(r4AnnounceFlipPromptIfNeeded);   // 识图找茬：等待翻牌时报「请某队开始选题」
 render();
 announceRulesIfNeeded();           // 覆盖「刷新后已处于翻牌选题」的情形
 r1AnnounceFlipPromptIfNeeded();    // 同上：刷新后若正等着翻牌，补报一次
 r2AnnounceFlipPromptIfNeeded();
+r4AnnounceFlipPromptIfNeeded();
 
 // ── 题库自动加载 ─────────────────────────────────
 // 题库为空时自动拉取同目录的 questions.json，省去每次手动导入。
