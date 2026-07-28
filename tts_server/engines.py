@@ -35,6 +35,13 @@ class EngineError(RuntimeError):
     """引擎不可用或合成失败"""
 
 
+# 单次合成的最长耗时。edge 引擎要连微软的服务器，链路一旦僵死
+# （连上了但不返回数据）就会无限等待 —— /api/speak 是同步接口，
+# 一个卡住的请求会占死一个工作线程，堆够了整个服务就不再响应，
+# 前端表现是「大屏出了题然后没有任何动静」。到点就放弃，让前端回退原生语音。
+SYNTH_TIMEOUT_S = float(os.environ.get("RZ_TTS_SYNTH_TIMEOUT", "12"))
+
+
 def float_to_wav(samples, sample_rate: int) -> bytes:
     """float32 [-1,1] 波形数组 → 16bit 单声道 WAV 字节"""
     import numpy as np
@@ -117,7 +124,16 @@ class EdgeEngine(BaseEngine):
                     buf.extend(chunk["data"])
             return bytes(buf)
 
-        data = asyncio.run(_run())
+        async def _run_capped() -> bytes:
+            # 超时必须加在协程内部：卡住的是 stream() 的 await，
+            # 在外面用线程 join 是掐不断它的，只会让工作线程一直挂着
+            return await asyncio.wait_for(_run(), timeout=SYNTH_TIMEOUT_S)
+
+        try:
+            data = asyncio.run(_run_capped())
+        except (asyncio.TimeoutError, TimeoutError):
+            raise EngineError(f"edge-tts 合成超时（>{SYNTH_TIMEOUT_S:g}秒），"
+                              f"通常是外网链路不通；前端会回退浏览器原生语音")
         if not data:
             raise EngineError("edge-tts 返回空音频（通常是断网或语音名无效）")
         return data

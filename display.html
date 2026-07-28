@@ -702,8 +702,11 @@ function updateBuzzBanner() {
   if (bs === 'armed') {
     showBuzzBanner('开始抢答！', 'show-armed');
   } else if (bs === 'prearm') {
-    // 题已念完、口令还没念完 —— 这一段抢按判违规，屏上要明确警示
-    showBuzzBanner('请等待「开始抢答」口令 — 抢按扣分', 'show-armed');
+    // 题已念完、发令还没落地 —— 这一段抢按判违规，屏上要明确警示。
+    // 系统读题模式下发令是「开始抢答 → 3 → 2 → 1 → 滴」，得说清等的是那声滴
+    showBuzzBanner(state.r3.autoRead
+      ? '听到「滴」声才可抢答 — 提前抢按扣分'
+      : '请等待「开始抢答」口令 — 抢按扣分', 'show-armed');
   } else if (bs === 'locked' || bs === 'supplement') {
     const team = state.teams.find(t => t.id === state.r3.buzzedTeam);
     const name = team?.name || '?';
@@ -874,7 +877,11 @@ function updateCardFlip() {
         // 牌背内容 —— 不显示题目文字，避免剧透
         let backHtml = '';
         if (round === 4) {
-          backHtml = escapeHtml(card.imageKey || `图${num}`);
+          // 图是翻开那一刻才随机抽的：没抽到之前牌背没有内容可写，
+          // 写「图N」会被当成图名，观众以为牌面早就定好了。
+          backHtml = card.imageKey
+            ? `<span style="font-size:.55em;opacity:.75">场景图</span><br>${escapeHtml(card.imageKey)}`
+            : '✦';
         } else if (round === 2) {
           const q = card.qId != null ? state.questions.find(q => q.id === card.qId) : null;
           const tLabel = q ? ({multi:'多选题',fill_multi:'填空题'}[q.type] || '选择题') : '题目';

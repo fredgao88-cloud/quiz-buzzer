@@ -17,6 +17,9 @@ const BC_NAME     = 'rz_contest_channel_v3';
 
 const TEAM_COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7'];
 
+// 扁平题型池里的全部题型（spot/theme 是单独上传的题源，不在其中）
+const POOL_TYPES = ['judge', 'single', 'multi', 'fill', 'fill_multi'];
+
 // ── 计分配置 ───────────────────────────────────────
 // 每题分值由【环节】决定，不再从题库读（题库的 score_correct/score_wrong 一律忽略）。
 // 赛制每天可能不同，所以全部放进 state.scoreCfg，在 设置 → 各环节计分 里改。
@@ -70,6 +73,9 @@ function defaultTeams() {
 
 function defaultState() {
   return {
+    // 状态版本号，每次 save() 自增。跨页面同步用它丢弃过期快照，详见 save()
+    rev: 0,
+
     // ── 元数据 ──────────────────────────────────
     teams: defaultTeams(),
     keymap: { 1:['1','q','Q'], 2:['2','w','W'], 3:['3','e','E'], 4:['4','r','R'], 5:['5','t','T'] },
@@ -96,14 +102,25 @@ function defaultState() {
     questions: [],           // 完整题库数组
     usedQIds:  [],           // 全场已抽走的题目 id（R1/R2/R3 共用一个池子，互不重复）
 
-    // 各环节抽题配置（翻牌次数 × 每次答几题 × 每题题型），全部在设置面板里改。
+    // 各环节抽题配置，全部在设置面板里改。
+    //
+    // R1/R2 是「一张牌连答几题」，每一题的题型要按顺序指定：
     //   turns   —— 翻几张牌（R2 恒等于队伍数，每队一张，此处不生效）
     //   perTurn —— 一张牌里连答几题
     //   types   —— 长度须等于 perTurn，逐题指定题型；'any' = 任意题型随机
+    //
+    // R3 抢答是一题一抽、没有「第几题」的概念，配的是【允许抽哪些题型】：
+    //   turns    —— 本环节计划出多少题（0 = 不限，出到池子空）
+    //   typePool —— 允许的题型集合（可多选）；空/缺配 = 全部题型
     roundCfg: {
       1: { turns: 20, perTurn: 3, types: ['judge', 'single', 'fill'] },
       2: { turns: 5,  perTurn: 4, types: ['multi', 'multi', 'fill_multi', 'fill_multi'] },
-      3: { turns: 25, perTurn: 1, types: ['any'] },
+      // typePool 默认留空 = 不限题型。不写死一组题型，是为了给旧存档的
+      // 迁移让路（见 getR3TypePool）：留空才轮得到旧的 types 字段说话。
+      3: { turns: 25, typePool: [] },
+      // R4 只用 turns —— 本环节出几道图题（= 发几张牌）。0 = 按队伍数，每队一张。
+      // 图题是单独上传的题源（type:'spot'），不参与题型池抽取，所以没有 perTurn/types。
+      4: { turns: 0 },
     },
 
     // 各环节计分（每题分值 + 每队封顶）。赛制按天调整就改这里，与题库无关。
@@ -145,6 +162,9 @@ function defaultState() {
       currentQIdx:     null,
       usedQIds:        [],
       timerSec:        15,
+      // 系统读题：开启后整个环节自跑 —— 读规则 → 自动出题 → 报题 → 念「开始抢答」
+      // → 三、二、一 → 滴（滴响才开抢）→ 判分后自动出下一题，直到出满题数。
+      autoRead:        false,
       buzzState:       'idle',   // idle|reading|armed|locked
       buzzedTeam:      null,
       selectedTeam:    null,
@@ -156,10 +176,12 @@ function defaultState() {
     },
 
     // ── 第四环节 识图找茬 ────────────────────────
+    // 图题【不在赛前分配】：翻开牌的那一刻才从「本场还没用过的图」里随机抽一张。
+    // 所以 draw 里没有 r4ImageMap —— 谁拿到哪张图，翻牌前谁也不知道。
     r4: {
       currentTeamIdx: 0,     // 指向 draw.teamOrder 的下标
       currentQIdx:    null,  // 当前图题在 questions[] 中的索引
-      usedQIds:       [],
+      usedQIds:       [],    // 本场已抽走的图题 id，防止两队抽到同一张图
       timerSec:       60,
       spotJudge:      {},    // {spotKey: true/false} 评委勾选结果
       extraSpots:     [],    // 评委现场认定额外找茬点
@@ -223,11 +245,11 @@ function defaultState() {
     },
 
     // ── 抽签 ────────────────────────────────────
+    // 只抽出场顺序。第四环节的图题曾经也在这里预分配（r4ImageMap），
+    // 现已改为翻牌当场随机抽（见 r4DrawForCard），故移除。
     draw: {
       teamOrder:  [],            // teamId[]，5支队伍出场顺序
-      r4ImageMap: {},            // {teamId: imageKey}，第四环节图题分配
       orderLocked: false,
-      imageLocked: false,
       log:        [],            // {type,prev,result,operator,ts}
     },
 
@@ -417,6 +439,15 @@ function r4SpotPosCount(imageKey) {
 }
 
 // ── 持久化 ───────────────────────────────────────
+// state.rev 是单调递增的版本号，每次 save() 自增，跨页面同步靠它判断新旧。
+//
+// 为什么必须有：BroadcastChannel / storage 的送达顺序不保证，而且对端页面收到
+// 状态后，它自己的监听器可能又 save() 一次，把一份【比本地旧】的快照广播回来。
+// 没有版本号时这份回声会直接整体覆盖本地状态 —— 实测现象是抢答刚进 armed
+// 又被打回 reading，抢答器按下去毫无反应；两个控制台还会就此形成回声风暴，
+// 互相广播到页面卡死。收到不比本地新的快照一律丢弃即可根治。
+let _applyingRemote = false;
+
 function load() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return;
@@ -427,11 +458,27 @@ function load() {
 }
 
 function save(broadcast = true) {
+  state.rev = (state.rev || 0) + 1;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  if (broadcast && bc) {
+  // 正在应用远端快照时，监听器里顺带触发的 save 不再广播出去：
+  // 那等于把刚收到的东西原样弹回对端，白白放大回声（有版本号后不会出错，但没必要）
+  if (broadcast && bc && !_applyingRemote) {
     try { bc.postMessage({ type: 'state', state }); } catch(e) {}
   }
   listeners.forEach(fn => fn());
+}
+
+/** 应用来自其他页面的状态快照；旧的（rev 不大于本地）直接丢弃 */
+function _applyRemoteState(incoming) {
+  if (!incoming || typeof incoming !== 'object') return;
+  if ((incoming.rev || 0) <= (state.rev || 0)) return;   // 过期回声，丢弃
+  _applyingRemote = true;
+  try {
+    state = incoming;
+    listeners.forEach(fn => fn());
+  } finally {
+    _applyingRemote = false;
+  }
 }
 
 function onChange(fn) {
@@ -442,17 +489,13 @@ function onChange(fn) {
 // ── 跨窗口同步 ──────────────────────────────────
 if (bc) {
   bc.addEventListener('message', e => {
-    if (e.data?.type === 'state') {
-      state = e.data.state;
-      listeners.forEach(fn => fn());
-    }
+    if (e.data?.type === 'state') _applyRemoteState(e.data.state);
   });
 }
 window.addEventListener('storage', e => {
   if (e.key === STORAGE_KEY && e.newValue) {
     try {
-      state = deepMerge(defaultState(), JSON.parse(e.newValue));
-      listeners.forEach(fn => fn());
+      _applyRemoteState(deepMerge(defaultState(), JSON.parse(e.newValue)));
     } catch(err) {}
   }
 });
@@ -558,6 +601,12 @@ function _cacheKey(text) {
  * 向服务取音频，返回 objectURL；失败抛异常。
  * 三层去重：已缓存直接返回 → 同文本正在请求则复用该 Promise → 否则发新请求。
  */
+// 单次合成请求的最长等待。超过就当服务不可用，回退浏览器原生语音。
+// 为什么必须有：/api/speak 是同步阻塞接口，服务端一旦卡住（线程堆死、
+// 引擎连不上外网）就永远不返回；没有超时的话前端会一直 await，
+// 现场表现是「大屏出了题，然后再没有任何动静」，整场比赛就此停摆。
+const TTS_FETCH_TIMEOUT_MS = 8000;
+
 function _fetchAudio(text) {
   const key = _cacheKey(text);
   if (_audioCache.has(key)) return Promise.resolve(_audioCache.get(key));
@@ -565,6 +614,9 @@ function _fetchAudio(text) {
 
   const ctl = new AbortController();
   _fetchCtls.add(ctl);
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; try { ctl.abort(); } catch(e) {} },
+                           TTS_FETCH_TIMEOUT_MS);
   const p = (async () => {
     try {
       const res = await fetch(`${state.tts.serverUrl}/api/speak`, {
@@ -577,7 +629,13 @@ function _fetchAudio(text) {
       const url = URL.createObjectURL(await res.blob());
       _audioCache.set(key, url);
       return url;
+    } catch (e) {
+      // 超时触发的 abort 必须换成普通异常抛出：调用方把 AbortError 当作
+      // 「被新播报正常打断」而静默丢弃，超时若也报 AbortError 就不会回退原生语音
+      if (timedOut) throw new Error(`TTS 服务 ${TTS_FETCH_TIMEOUT_MS / 1000} 秒无响应`);
+      throw e;
     } finally {
+      clearTimeout(timer);
       _inflight.delete(key);
       _fetchCtls.delete(ctl);
     }
@@ -642,12 +700,44 @@ function _speakOne(text, onend, seq, opts) {
   else              _nativeSpeak(text, onend, seq, opts);
 }
 
+/**
+ * 给一次播报套上「到点必走」的看门狗，返回包装后的回调（只会触发一次）。
+ *
+ * 播报回调不来的情况在现场是真实存在的：TTS 服务卡死、Chrome 的
+ * speechSynthesis onend 不回调、音频解码失败。这些回调是流程的推进器
+ * （念完题才开抢、判分播完才出下一题），不来就整场停摆 —— 主持人站在台上
+ * 只看到大屏出了题然后再没动静，也不知道该点什么。
+ *
+ * 宁可少念一句，也不能让环节卡住：按字数估个上限，到点就直接往下走。
+ * 估算给得比正常朗读宽裕得多，正常播完总会先回调，看门狗只在真出事时兜底。
+ * 必须在 _cancelAll() 之后调用 —— seq 要取新的那一个。
+ */
+function _withSpeechWatchdog(segments, cb) {
+  const seq = _speakSeq;
+  let done = false;
+  const est = segments.reduce((a, t) => a + String(t || '').length * 300 + 1500, 0) + 4000;
+  const timer = setTimeout(() => {
+    if (done || seq !== _speakSeq) return;   // 已正常播完 / 已被新的播报接管
+    done = true;
+    console.warn('[rz] 朗读超时（TTS 无响应），跳过剩余语音继续流程');
+    _ttsQueue = [];
+    _ttsBusy  = false;
+    cb?.();
+  }, est);
+  return () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    cb?.();
+  };
+}
+
 /** 播放单条文本（立即打断当前播放） */
 function speak(text, opts = {}) {
   if (!isTTSAvailable()) { opts.onend?.(); return; }
   _cancelAll();
   const seq = _speakSeq;
-  _speakOne(text, opts.onend, seq, opts);
+  _speakOne(text, _withSpeechWatchdog([text], opts.onend), seq, opts);
 }
 
 /** 顺序播放多段文本；全部播完后调用 onAllDone */
@@ -656,7 +746,7 @@ function speakQueue(segments, onAllDone) {
   _cancelAll();
   _ttsQueue = [...segments];
   _prefetchAll(_ttsQueue);          // 先并行发起全部合成，再顺序播放
-  _drainQueue(onAllDone, _speakSeq);
+  _drainQueue(_withSpeechWatchdog(_ttsQueue, onAllDone), _speakSeq);
 }
 
 function _drainQueue(onAllDone, seq) {
@@ -670,6 +760,46 @@ function _drainQueue(onAllDone, seq) {
 
 function stopSpeak() {
   _cancelAll();
+}
+
+// ── 抢答发令音「滴」──────────────────────────────
+// 用 Web Audio 现场合成，不走音频文件、也不走 TTS 服务：发令音是全场抢答公平性的
+// 基准，绝不能因为「文件没加载出来」或「TTS 服务掉线」而不响。
+let _audioCtx = null;
+
+/**
+ * 播一声短促的「滴」，播完（或兜底到点）回调 onDone。
+ * onDone 保证只触发一次：osc.onended 在部分浏览器不回调，故另加保底定时器。
+ */
+function playBuzzBeep(onDone) {
+  const DUR = 0.18;               // 秒。太短听不清，太长会拖慢发令
+  let fired = false;
+  const fire = () => { if (!fired) { fired = true; onDone?.(); } };
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) { setTimeout(fire, DUR * 1000); return; }
+    if (!_audioCtx) _audioCtx = new Ctx();
+    if (_audioCtx.state === 'suspended') _audioCtx.resume();
+
+    const t0   = _audioCtx.currentTime;
+    const osc  = _audioCtx.createOscillator();
+    const gain = _audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1000, t0);
+    // 直接给满音量两端会「啪」地爆音，各留 10ms 渐入渐出
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(0.9, t0 + 0.01);
+    gain.gain.setValueAtTime(0.9, t0 + DUR - 0.01);
+    gain.gain.linearRampToValueAtTime(0, t0 + DUR);
+    osc.connect(gain).connect(_audioCtx.destination);
+    osc.start(t0);
+    osc.stop(t0 + DUR);
+    osc.onended = fire;
+    setTimeout(fire, DUR * 1000 + 150);      // 保底
+  } catch (e) {
+    console.warn('[rz] 发令音播放失败，按静音继续:', e?.message);
+    setTimeout(fire, DUR * 1000);
+  }
 }
 
 /** 数字转中文语音（含小数） */
@@ -839,20 +969,6 @@ function drawTeamOrder() {
   return true;
 }
 
-/** 抽取第四环节图题分配 */
-function drawR4Images(imageKeys) {
-  if (state.draw.imageLocked) return false;
-  // imageKeys: string[]，长度 >= 5，从中随机分配
-  const shuffled = fisherYates(imageKeys).slice(0, 5);
-  state.draw.r4ImageMap = {};
-  state.draw.teamOrder.forEach((teamId, i) => {
-    state.draw.r4ImageMap[teamId] = shuffled[i];
-  });
-  state.draw.log.push({ type:'draw_images', result:{...state.draw.r4ImageMap}, ts: Date.now() });
-  save();
-  return true;
-}
-
 /**
  * 手动设置出场顺序（线下抽签后录入 / 拖拽排序用）
  * newOrder: teamId[]，必须是全部队伍的一个排列
@@ -886,23 +1002,6 @@ function lockDrawOrder() {
 function unlockDrawOrder() {
   state.draw.orderLocked = false;
   state.draw.log.push({ type:'unlock_order', ts: Date.now() });
-  save();
-  return true;
-}
-
-/** 锁定图题分配 */
-function lockDrawImages() {
-  if (!Object.keys(state.draw.r4ImageMap).length) return false;
-  state.draw.imageLocked = true;
-  state.draw.log.push({ type:'lock_images', ts: Date.now() });
-  save();
-  return true;
-}
-
-/** 解锁图题分配 */
-function unlockDrawImages() {
-  state.draw.imageLocked = false;
-  state.draw.log.push({ type:'unlock_images', ts: Date.now() });
   save();
   return true;
 }
@@ -941,7 +1040,7 @@ function forceOverrideTeamOrder(newOrder, operator) {
  * 初始化翻牌牌组
  * round: 1 或 4
  * 第一环节: 40张问题卡（从 questions 中筛选 r1 类型，随机排列）
- * 第四环节: 5张图题卡（按 draw.teamOrder 对应 r4ImageMap）
+ * 第四环节: N 张空白牌，翻开时才随机抽图（见 r4DrawForCard）
  */
 /** 按配置的牌数截取牌池：deckSize<=0 或未配置 → 用全部；否则取前 n 张（不足则全用） */
 function deckSlice(pool, round) {
@@ -962,6 +1061,73 @@ function setDeckSize(round, n) {
 // 题库是扁平的题型池，不预分配环节。各环节点「开始本环节」时按 roundCfg 随机抽，
 // 抽走的记进 state.usedQIds —— 全场跨环节都不再抽到同一道题。
 // spot/theme 带 round，是单独上传的题源，天然被 round==null 排除在池子外。
+
+// =====================================================
+// 第四环节的图题池（独立于上面的题型池）
+// =====================================================
+// 图题（type:'spot'）是单独上传的题源：一张场景图 + 一份找茬点答案。
+// 不在赛前分配给某队 —— 轮到某队翻牌，翻开那一刻才从「本场还没用过的图」里
+// 随机抽一张。图池可以多于队伍数（导入 8 张、只出 5 张），出几张由
+// roundCfg[4].turns 配；抽走的记进 r4.usedQIds，同场不会有两队撞同一张图。
+
+/** 题库里全部图题 */
+function r4ImagePool() {
+  return state.questions.filter(q => q.type === 'spot');
+}
+
+/** 本场还没被抽走的图题 */
+function r4AvailableImages() {
+  const used = new Set(state.r4.usedQIds || []);
+  return r4ImagePool().filter(q => !used.has(q.id));
+}
+
+/**
+ * 本环节要出几道图题（= 发几张牌）。
+ * roundCfg[4].turns 为 0/未配 → 按队伍数（每队一张，赛制默认）。
+ * 真正发几张还要受图池存量限制，见 initCardDeck(4)。
+ */
+function getR4ImageCount() {
+  const n = parseInt(state.roundCfg?.[4]?.turns, 10);
+  if (n > 0) return n;
+  return state.draw.teamOrder.length || state.teams.length;
+}
+
+/**
+ * 翻开某张牌 → 当场随机抽一张图定给它。
+ *
+ * 抽中的图写回 card.imageKey（大屏牌背和后续 confirmFlip 都读它），
+ * 同时立刻记进 usedQIds 并切好 currentQIdx —— 中间不留「已翻开但还没定图」
+ * 的空档，否则大屏会闪一下空白牌背。
+ *
+ * 已经定过图的牌直接返回原图（重复调用不会换题）。
+ * 返回抽中的题目对象；图池已空返回 null（调用方须提示主持人）。
+ */
+function r4DrawForCard(cardId) {
+  const card = state.cardFlip.cards.find(c => c.id === cardId);
+  if (!card) return null;
+
+  let q;
+  if (card.imageKey) {
+    q = state.questions.find(x => x.type === 'spot' && x.imageKey === card.imageKey);
+  } else {
+    const avail = r4AvailableImages();
+    if (!avail.length) return null;
+    q = avail[Math.floor(Math.random() * avail.length)];
+    card.imageKey = q.imageKey;
+    if (!state.r4.usedQIds) state.r4.usedQIds = [];
+    state.r4.usedQIds.push(q.id);
+    // 牌面内容变了，大屏靠 flipPulse 判断要不要重绘牌组，不自增就还是旧牌背
+    state.cardFlip.flipPulse++;
+  }
+  if (!q) return null;
+
+  const idx = state.questions.indexOf(q);
+  state.r4.currentQIdx = idx >= 0 ? idx : null;
+  state.r4.spotJudge   = {};     // 新图，评委勾选清零
+  state.r4.extraSpots  = [];
+  save();
+  return q;
+}
 
 /** 环节配置（带兜底，防旧存档缺字段） */
 function getRoundCfg(round) {
@@ -1002,6 +1168,48 @@ function drawQuestionIds(types, exclude = new Set()) {
   return picked;
 }
 
+// ── 擂台抢答的抽题（题型可多选）──────────────────
+// R3 是一题一抽，没有「第 1 题、第 2 题」的顺序概念，所以不像 R1/R2 那样
+// 逐题指定题型，而是配一个【允许的题型集合】，每次从集合里随机抽一道。
+
+/**
+ * 允许抽的题型集合。取值优先级：
+ *   1. typePool —— 新配置，用户在设置里勾的
+ *   2. types    —— 旧存档遗留（以前 R3 也走「逐题指定题型」那套，实际只有一格）。
+ *                  没有 typePool 时把它当允许集合用，免得升级后主持人赛前配的
+ *                  「只出判断题」被悄悄换成不限题型。'any' 不是具体题型，过滤掉。
+ *   3. 全部题型 —— 都没有就是不限，与升级前 'any' 的行为一致
+ * 用户一旦在设置里动过勾选，setR3Type() 会删掉遗留的 types，迁移只发生一次。
+ */
+function getR3TypePool() {
+  const cfg = state.roundCfg?.[3] || {};
+  const pick = arr => Array.isArray(arr) ? [...new Set(arr.filter(t => POOL_TYPES.includes(t)))] : [];
+  const fromPool   = pick(cfg.typePool);
+  if (fromPool.length) return fromPool;
+  const fromLegacy = pick(cfg.types);
+  if (fromLegacy.length) return fromLegacy;
+  return [...POOL_TYPES];
+}
+
+/**
+ * 当前还能抽的题：题型在允许集合内，且没被全场抽走。
+ * 注意是【先合并候选、再随机】，不是「先随机选个题型、再从中抽题」——
+ * 后者会让只剩 3 道的判断题和还剩 80 道的多选题被抽中的概率一样大，
+ * 结果是稀缺题型很快见底、整个环节抽题失败。
+ */
+function r3AvailablePool() {
+  const used  = new Set(state.usedQIds || []);
+  const allow = new Set(getR3TypePool());
+  return poolAll().filter(q => !used.has(q.id) && allow.has(q.type));
+}
+
+/** 随机抽一道抢答题，返回题目 id；抽不出返回 null */
+function drawR3QuestionId() {
+  const avail = r3AvailablePool();
+  if (!avail.length) return null;
+  return avail[Math.floor(Math.random() * avail.length)].id;
+}
+
 /** 把题目标记为已抽走（全场不再重复） */
 function markQIdsUsed(qIds) {
   if (!state.usedQIds) state.usedQIds = [];
@@ -1029,6 +1237,8 @@ function releaseUnplayedCards() {
 
 /** 按当前配置，池子最多还能撑起几轮（受最紧缺的那个题型限制） */
 function maxTurnsFor(round) {
+  // R3 一题一抽，能出几题就是允许题型里还剩几道，不存在「每轮用量」
+  if (round === 3) return r3AvailablePool().length;
   const { types } = getRoundCfg(round);
   const uses = {};
   types.forEach(t => { uses[t] = (uses[t] || 0) + 1; });
@@ -1064,11 +1274,16 @@ function initCardDeck(round) {
       cards.push({ id: `r${round}_${i}`, cardNum: i + 1, qIds, revealed: false, used: false });
     }
   } else if (round === 4) {
-    cards = state.draw.teamOrder.map((teamId, i) => ({
+    // 牌【不预绑图】：发的是一叠空白牌，翻开哪张才现抽哪张图（r4DrawForCard）。
+    // 张数取配置值，但不能超过图池存量 —— 发出去却抽不到图的牌是废牌，
+    // 翻到它只会得到一句「图已用完」，等于当众卡壳。
+    const want  = getR4ImageCount();
+    const avail = r4AvailableImages().length;
+    const n     = Math.min(want, avail);
+    cards = Array.from({ length: n }, (_, i) => ({
       id:       `r4_${i}`,
       cardNum:  i + 1,
-      teamId,
-      imageKey: state.draw.r4ImageMap[teamId] || null,
+      imageKey: null,      // 翻开时才填
       revealed: false,
       used:     false,
     }));
@@ -1138,9 +1353,13 @@ function confirmFlip(cardId) {
     state.r2.qNum        = 0;
     state.r2.turnResults = [];
     state.r2.currentQIdx = state.r2.turnQIdxs.length ? state.r2.turnQIdxs[0] : null;
-  } else if (round === 4 && card.imageKey != null) {
-    const idx = state.questions.findIndex(q => q.imageKey === card.imageKey);
-    if (idx >= 0) state.r4.currentQIdx = idx;
+  } else if (round === 4) {
+    // 图在翻开时已由 r4DrawForCard 抽定并写好 currentQIdx，这里只兜底：
+    // 万一走到这还没图（例如图池空了），按牌上的 imageKey 再找一次。
+    if (state.r4.currentQIdx == null && card.imageKey != null) {
+      const idx = state.questions.findIndex(q => q.imageKey === card.imageKey);
+      if (idx >= 0) state.r4.currentQIdx = idx;
+    }
   }
   state.displayMode = 'question';
   save();
@@ -1398,7 +1617,7 @@ function initR3() {
  *             这一段才是真正的抢跑，防的就是听完题就疯狂砸按钮
  *   armed     「开始抢答」念完 —— 第一个按下的锁定
  */
-function r3StartQuestion(qIdx, onArmed) {
+function r3StartQuestion(qIdx, onArmed, intro = '') {
   const q = state.questions[qIdx];
   if (!q) return false;
   state.r3.currentQIdx     = qIdx;
@@ -1416,9 +1635,11 @@ function r3StartQuestion(qIdx, onArmed) {
   save();
 
   if (window.IS_CONTROL) {
-    // 分两段播：题干/选项一段，「开始抢答」单独一段 —— 中间那一刻切到 prearm，
-    // 抢跑判定窗口就精确地落在「题念完 → 口令念完」之间
-    speakQueue(buildQuestionSegments(q), () => {
+    // 分两段播：报题+题干/选项一段，发令口令单独一段 —— 中间那一刻切到 prearm，
+    // 抢跑判定窗口就精确地落在「题念完 → 发令落地」之间。
+    // intro 是「第三题，判断题」这类报题前缀，格式与 R1/R2 一致，由调用方拼好传进来
+    // （题型中文名是控制台侧的显示文案，不下沉到状态层）。
+    speakQueue([intro, ...buildQuestionSegments(q)].filter(Boolean), () => {
       state.r3.buzzState = 'prearm';
       save();
       r3SpeakGoAndArm(onArmed);
@@ -1429,7 +1650,16 @@ function r3StartQuestion(qIdx, onArmed) {
   return true;
 }
 
-/** 念「开始抢答」，念完进 armed 并起计时。违规播报结束后也走这里（不重读整题） */
+/**
+ * 念发令口令，念完进 armed 并起计时。违规播报结束后也走这里（不重读整题）。
+ *
+ * 两种发令方式：
+ *   系统读题开启 —— 「开始抢答」→ 三 → 二 → 一 → 滴。【滴响的那一刻】才 armed，
+ *                    3、2、1 全程仍是 prearm，此间抢按＝抢跑违规（见 r3TryBuzz）。
+ *                    倒数把发令时刻钉死在一个所有人都听得见的点上，比一句话念完
+ *                    含糊收尾要公平得多。
+ *   手动模式     —— 沿用原样：「开始抢答」念完即开抢。
+ */
 function r3SpeakGoAndArm(onArmed) {
   const arm = () => {
     if (state.r3.currentQIdx == null) return;   // 期间已跳过本题
@@ -1438,8 +1668,13 @@ function r3SpeakGoAndArm(onArmed) {
     onArmed?.();
     startTimer(state.r3.timerSec * 1000, 3);
   };
-  if (window.IS_CONTROL) speak('开始抢答', { onend: arm });
-  else arm();
+  if (!window.IS_CONTROL) { arm(); return; }
+  if (state.r3.autoRead) {
+    // 用阿拉伯数字而非「三二一」：预热缓存里存的就是 '1'~'10'，能直接命中，不必现合成
+    speakQueue(['开始抢答', '3', '2', '1'], () => playBuzzBeep(arm));
+  } else {
+    speak('开始抢答', { onend: arm });
+  }
 }
 
 /**
@@ -1994,6 +2229,78 @@ function _resetR3() {
   state.r3.violatedTeams  = [];
 }
 
+/**
+ * 重置本场比赛 —— 回到「开赛前」的干净状态，供彩排 / 反复测试用。
+ *
+ * 只清【赛况】，不动【配置与素材】：
+ *   清空 —— 分数、个人分、判分流水、抽题记录（usedQIds）、牌组、
+ *           各环节进度与当前题、计时器、大屏各展示开关与小结、规则已读标记
+ *   保留 —— 题库内容、队伍与队员、抽签结果、抽题/计分/倒计时配置、规则文案、
+ *           品牌与背景图、R4 场景图与找茬点坐标、TTS 设置
+ *
+ * 为什么另起一个函数而不是扩展 clearAllScores()：
+ *   · clearAllScores() 只归零分数，usedQIds 与牌组仍在 —— 再测一遍会「题都被抽走了」
+ *   · loadQuestions() 虽然清得干净，但它是「换题库」的入口，要求重新导入
+ * 抽签不在此清（另有 [重置抽签] 按钮）：重测时通常还想沿用同一套出场顺序与图题分配，
+ * 清掉的话每次都得重抽一遍才能开 R2/R4。
+ */
+function resetContest() {
+  // 分数与流水
+  state.teams.forEach(t => {
+    t.scores      = { r1:0, r2:0, r3:0, r4:0, r5:0 };
+    t.memberScores = { 0:0, 1:0, 2:0, 3:0 };
+  });
+  state.history = [];
+
+  // 抽题池：全部题目回到「未抽」
+  state.usedQIds = [];
+
+  // 牌组作废，回到无牌状态
+  state.cardFlip.cards           = [];
+  state.cardFlip.context         = { round: null, teamId: null, memberIdx: null, pickCount: 0, picked: [] };
+  state.cardFlip.flipPulse       = 0;
+  state.cardFlip.lastFlippedCard = null;
+
+  // 各环节进度与当前题
+  state.r1.currentTeamIdx = 0;    state.r1.currentMemberIdx = 0;
+  state.r1.currentQIdx    = null; state.r1.usedQIds         = [];
+  state.r1.turnQIds       = [];   state.r1.turnSubIdx       = 0;
+
+  state.r2.currentTeamIdx = 0;    state.r2.currentMemberIdx = null;
+  state.r2.currentQIdx    = null; state.r2.usedQIds         = [];
+  state.r2.turnQIdxs      = [];   state.r2.qNum             = 0;
+  state.r2.turnResults    = [];
+
+  state.r3.currentQIdx    = null; state.r3.usedQIds         = [];
+  state.r3.excludedTeams  = [];   state.r3.currentReadText  = '';
+  state.r3.buzzPulse      = 0;    state.r3.lastBuzzTeam     = null;
+  _resetR3();
+
+  state.r4.currentTeamIdx = 0;    state.r4.currentQIdx      = null;
+  state.r4.usedQIds       = [];   state.r4.spotJudge        = {};
+  state.r4.extraSpots     = [];
+
+  state.r5.currentThemeIdx = 0;   state.r5.currentTurnIdx   = 0;
+  state.r5.teamOrder       = [];  state.r5.activeTeams      = [];
+  state.r5.usedAnswers     = [];  state.r5.themeWinners     = [];
+  state.r5.isTiebreak      = false;
+
+  // 赛程与大屏
+  state.currentRound        = 0;
+  state.roundPhase          = 'idle';
+  state.pickedAnswer        = null;
+  state.showAnswerOnDisplay = false;
+  state.showScoresOnDisplay = false;
+  state.roundSummary        = null;
+  state.scorePulse          = null;
+  state.turnCard            = { round: null, revealed: false };
+  state.displayMode         = 'question';
+  state.roundRulesDismissed = {};   // 各环节规则窗口重新展示并朗读
+
+  resetTimer();
+  save();
+}
+
 function resetTeams() {
   state.teams   = defaultTeams();
   state.keymap  = { 1:['1','q','Q'], 2:['2','w','W'], 3:['3','e','E'], 4:['4','r','R'], 5:['5','t','T'] };
@@ -2003,9 +2310,7 @@ function resetTeams() {
 function resetDraw() {
   state.draw = {
     teamOrder:   [],
-    r4ImageMap:  {},
     orderLocked: false,
-    imageLocked: false,
     log:         [],
   };
   save();
@@ -2154,9 +2459,13 @@ function buildTeamScoresCSV() {
   return _csvRows(rows);
 }
 
-/** 个人成绩表 CSV（R1 个人分不受队伍上限影响，可据此评「最佳个人」，见 6.2） */
+/**
+ * 个人成绩表 CSV，用于评「最佳个人」（见 6.2）。
+ * 个人分只来自 ①个人必答 与 ③擂台抢答 —— 只有这两个环节有明确的作答人；
+ * 且不受队伍封顶裁剪，否则全队答满触顶的队伍反而评不出最佳个人。
+ */
 function buildMemberScoresCSV() {
-  const rows = [['队伍', '姓名', '个人得分(R1)']];
+  const rows = [['队伍', '姓名', '个人得分(①个人必答＋③擂台抢答)']];
   const all = [];
   state.teams.forEach(t => {
     (t.members || []).forEach((name, i) => {
