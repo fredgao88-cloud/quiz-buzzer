@@ -937,8 +937,22 @@ function updateFlowerArea() {
     used.map((a,i)=>`${i+1}.${a.answer}`).join('  ') || '（暂无）';
 }
 
-// ── 键盘：F 全屏 ─────────────────────────────────
-// 大屏是只读页，除全屏外不接受任何按键（不写 state）
+// ── 键盘：抢答键转发 + F 全屏 ──────────────────────
+// 大屏仍是只读页（自己绝不写 state），但必须接管抢答键：
+// 主持人常把大屏投到副屏、点一下它进全屏，键盘焦点就落在大屏窗口，
+// 控制台的 keydown 再也收不到 —— 现象是抢答器按了毫无反应，且极难排查。
+// 这里只把「谁按了」广播出去，由控制台按抢答状态机去判定（成功/违规/忽略）。
+document.addEventListener('keydown', e => {
+  if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  for (const [tid, keys] of Object.entries(state.keymap || {})) {
+    if ((keys || []).includes(e.key)) {
+      try { bc?.postMessage({ type: 'buzz', teamId: +tid }); } catch (err) {}
+      return;
+    }
+  }
+});
+
 document.addEventListener('keydown', e => {
   if (e.key !== 'f' && e.key !== 'F') return;
   if (e.ctrlKey || e.altKey || e.metaKey) return;

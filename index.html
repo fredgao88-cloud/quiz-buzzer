@@ -383,6 +383,9 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
   <div class="card">
     <div class="card-title">擂台抢答 <span class="pill" id="r3-score-pill"></span></div>
     <div id="r3-banner" class="buzz-banner buzz-idle anim-pulse" style="animation:none">待机中</div>
+    <!-- 抢答自检：最近一次按键的判定结果。「按了没反应」的各种原因现象都一样，
+         不写出来只能靠猜 -->
+    <div id="r3-buzz-diag" style="display:none;font-size:12px;margin:-4px 0 8px;padding:5px 8px;border-radius:6px"></div>
     <div class="row" style="margin-bottom:10px">
       <button class="btn-primary" onclick="r3Init()">开始本环节</button>
       <button class="btn-warn btn-lg" onclick="r3StartQ()">出题（朗读+开始抢答）</button>
@@ -392,6 +395,15 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
              title="开启后整环节自动进行：读规则→出题→报题→开始抢答 3、2、1 滴→判分后自动下一题">
         <input type="checkbox" id="r3-auto-read" onchange="r3SetAutoRead(this.checked)">系统读题</label>
       <span id="r3-progress" style="color:var(--muted);font-size:12px"></span>
+    </div>
+    <!-- 手动指定抢答队伍：抢答器/键盘失灵时的现场逃生通道。
+         走的是与键盘完全相同的判定逻辑（armed 则锁定、发令未落地则判抢跑），
+         所以不会绕过赛制，只是把「按键」换成「点击」。 -->
+    <div id="r3-manual-buzz" style="margin-bottom:8px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">
+        手动指定抢答队伍（抢答器失灵时用，判定规则与按键完全一致）
+      </div>
+      <div id="r3-manual-buzz-btns" class="row"></div>
     </div>
     <!-- 已抢答队伍：放在题目上方——必须先选队员，再去点题目选项判分 -->
     <div id="r3-buzz-info" style="display:none" class="q-box">
@@ -1264,6 +1276,20 @@ function renderP3() {
   banner.textContent = bm.text;
   banner.className = `buzz-banner ${bm.cls}${bm.anim?' anim-pulse':''}`;
 
+  // 抢答自检提示：只显示最近 8 秒内的，别让上一题的旧提示留在屏幕上误导人
+  const diagEl = document.getElementById('r3-buzz-diag');
+  if (diagEl) {
+    if (_buzzDiag && Date.now() - _buzzDiag.ts < 8000) {
+      diagEl.style.display = '';
+      diagEl.style.background  = _buzzDiag.ok ? '#14532d33' : '#78350f33';
+      diagEl.style.border      = `1px solid ${_buzzDiag.ok ? 'var(--green)' : 'var(--yellow)'}`;
+      diagEl.innerHTML = `<b style="color:${_buzzDiag.color}">${escapeHtml(_buzzDiag.name)}</b> 按下抢答器 → `
+        + `<span style="color:${_buzzDiag.ok ? 'var(--green)' : 'var(--yellow)'}">${escapeHtml(_buzzDiag.msg)}</span>`;
+    } else {
+      diagEl.style.display = 'none';
+    }
+  }
+
   const r3AutoBox = document.getElementById('r3-auto-read');
   if (r3AutoBox) r3AutoBox.checked = !!state.r3.autoRead;
   const r3cfg = getRoundCfg(3);
@@ -1272,6 +1298,19 @@ function renderP3() {
     `已出 ${state.r3.usedQIds.length}/${r3cfg.turns || '不限'} 题`
     + `　题型：${r3types.length === POOL_TYPES.length ? '不限' : r3types.map(t => TYPE_LABEL[t] || t).join('/')}`
     + `　可抽 ${r3AvailablePool().length} 道`;
+
+  // 手动抢答按钮：已失去本题资格的队置灰，其余可点。抢答器坏了也能把比赛跑完。
+  const mb = document.getElementById('r3-manual-buzz-btns');
+  if (mb) {
+    const excluded = state.r3.excludedTeams || [];
+    mb.innerHTML = orderedTeams().map(t => {
+      const out = excluded.includes(t.id);
+      return `<button class="btn-ghost btn-sm" ${out ? 'disabled' : ''}
+        title="${out ? '本队已在本题抢答过，失去资格' : `按下 ${(state.keymap[t.id]||[]).join(' / ') || '（未配键位）'} 等效`}"
+        style="border-color:${tColor(t)}88;color:${out ? 'var(--muted)' : tColor(t)}${out ? ';opacity:.45' : ''}"
+        onclick="handleBuzz(${t.id})">${escapeHtml(t.name)}</button>`;
+    }).join('');
+  }
 
   const bi = document.getElementById('r3-buzz-info');
   const memberChosen = state.r3.selectedMember != null;
@@ -1694,17 +1733,75 @@ function renderRoundScores(elId, rKey) {
 // ────────────────────────────────────────────────
 // 抢答器按键
 // ────────────────────────────────────────────────
-document.addEventListener('keydown', e => {
-  if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
-  if (curPanel !== 3) return;
-  const km = state.keymap || {};
-  for (const [tid, keys] of Object.entries(km)) {
-    if (keys.includes(e.key)) {
-      if (r3TryBuzz(+tid)) _r3Locked = false;   // 新一次抢答锁定成功，解开判分锁
-      break;
-    }
+/** 这个按键属于哪支队伍的抢答器；不是抢答键返回 null */
+function keymapTeam(key) {
+  for (const [tid, keys] of Object.entries(state.keymap || {})) {
+    if ((keys || []).includes(key)) return +tid;
   }
+  return null;
+}
+
+// 抢答自检：记下最近一次按键的判定结果。
+// 「按了没反应」在台上是最难查的故障 —— 可能是焦点跑到别的窗口、面板没切过去、
+// 还在读题、本队已失去资格…… 每一种的现象都一模一样（什么都没发生）。
+// 把判定理由直接打在面板上，主持人一眼就知道该怎么办。
+let _buzzDiag = null;
+function noteBuzzDiag(teamId, msg, ok = false) {
+  const t = state.teams.find(x => x.id === teamId);
+  _buzzDiag = { name: t?.name || `队${teamId}`, color: t ? tColor(t) : '#888', msg, ok, ts: Date.now() };
+  render();
+}
+
+/** 统一的抢答入口：本机键盘与大屏转发过来的都走这里 */
+function handleBuzz(teamId) {
+  // 面板没切到③也放行，只要比赛正处在第三环节 —— 主持人翻看别的面板时
+  // 选手照样可能抢答，为这个把抢答器锁死不值得
+  if (curPanel !== 3 && state.currentRound !== 3) {
+    return noteBuzzDiag(teamId, '当前不在擂台抢答环节，按键忽略');
+  }
+  // 必须在调用前取：r3TryBuzz 会就地改掉 buzzState，事后再读就分不清
+  // 「抢答成功」和「抢跑违规」了 —— 后者也返回 true（违规已判罚＝处理成功）
+  const bs = state.r3.buzzState;
+  const ok = r3TryBuzz(teamId);
+  if (ok) {
+    _r3Locked = false;                      // 新一次抢答锁定成功，解开判分锁
+    if (bs === 'prearm') {
+      return noteBuzzDiag(teamId, state.r3.autoRead
+        ? '「滴」声还没响就按了 —— 判抢跑违规，扣分并失去本题抢答资格'
+        : '发令口令还没念完就按了 —— 判抢跑违规，扣分并失去本题抢答资格');
+    }
+    return noteBuzzDiag(teamId, '抢答成功', true);
+  }
+  // 没抢上一定有原因，逐条说清楚
+  const msg =
+      bs === 'reading'   ? '正在读题，此时按抢答器无效（不扣分）'
+    : bs === 'prearm'    ? '本题已判过一次抢跑违规，不重复扣分'
+    : bs === 'violating' ? '违规播报中，按键忽略'
+    : bs === 'locked'    ? `已有队伍抢到（${state.teams.find(t=>t.id===state.r3.buzzedTeam)?.name || '?'}），本题锁定中`
+    : bs === 'idle'      ? '尚未出题或本题已结束 —— 请点【出题】'
+    : (state.r3.excludedTeams || []).includes(teamId) ? '本队已在本题抢答过，已失去资格'
+    : `抢答状态 ${bs}，不接受抢答`;
+  noteBuzzDiag(teamId, msg);
+}
+
+document.addEventListener('keydown', e => {
+  const tid = keymapTeam(e.key);
+  if (tid == null) return;                    // 不是抢答键，完全不干预
+  if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) {
+    // 光标在输入框里时抢答键会被当成普通输入。这在设置面板里改完东西没点别处时很常见
+    return noteBuzzDiag(tid, '光标在输入框里 —— 先点一下页面空白处再按');
+  }
+  handleBuzz(tid);
 });
+
+// 大屏窗口转发过来的抢答（见 display.html）。主持人把大屏投到副屏并点它进全屏后，
+// 键盘焦点就在大屏那边，本页的 keydown 再也收不到 —— 抢答器会整个失灵。
+try {
+  const _bz = new BroadcastChannel(BC_NAME);
+  _bz.addEventListener('message', e => {
+    if (e.data?.type === 'buzz') handleBuzz(+e.data.teamId);
+  });
+} catch (e) {}
 
 // ────────────────────────────────────────────────
 // 计时器轮询
