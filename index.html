@@ -2537,11 +2537,12 @@ function doR3(correct) {
   if (!ev) return alert('请先选择回答队员');
   _r3Locked = true;
   stopTimer(); cdSpoken.clear();
-  state.showAnswerOnDisplay = true;
+  // ⚠️ 答错【绝对不能】公布答案：本题还要继续让其他队抢，答案一亮全场就都知道了。
+  // 只有答对（本题就此结束）才揭晓。答错时的答案由 r3ContinueOrEnd() 在「各队均已
+  // 抢答」时才公布，或由主持人手动点【公布答案】。
+  state.showAnswerOnDisplay = !!correct;
   state.showScoresOnDisplay = true;
   save(); render();
-  // TTS 播报成绩。答对/答错到此都结束，不自动往下走——记分牌留在大屏上，
-  // 主持人看完手动点【出题】进下一题，或（答错时）点【开放补抢】换下一队抢。
   const team = state.teams.find(t => t.id === ev.teamId);
   const memberName = ev.memberName || `队员${ev.memberIdx+1}`;
   const total = teamTotal(team);

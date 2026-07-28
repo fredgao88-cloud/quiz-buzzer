@@ -1410,6 +1410,9 @@ function r3StartQuestion(qIdx, onArmed) {
   state.r3.violatedTeams   = [];   // 新题，违规记录清零（同一队同一题只罚一次）
   state.r3.currentReadText = q.stem || '';
   state.showAnswerOnDisplay = false;
+  // 必须清掉上一环节残留的所选：大屏对「被选中且正好是正确答案」的选项会直接标绿，
+  // 不看 showAnswerOnDisplay。残留值万一与本题答案相同，等于开局就泄题。
+  state.pickedAnswer = null;
   save();
 
   if (window.IS_CONTROL) {
