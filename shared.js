@@ -572,7 +572,8 @@ function ttsServerStatus() {
 async function ttsPrewarm() {
   if (!_serverOk) return { ok:0, error:'本地 TTS 服务未连接' };
   const texts = [
-    '开始抢答', '时间到', '时间到，作答超时', '时间到，无人抢答',
+    '开始抢答', '继续抢答', '下面开始出题', '擂台抢答环节结束',
+    '时间到', '时间到，作答超时', '时间到，无人抢答',
     '时间到，请各队举板', '时间到，本队找茬结束', '开放补抢',
     ...Array.from({length:10}, (_,i) => String(i+1)),
   ];
@@ -1692,7 +1693,7 @@ function r3StartQuestion(qIdx, onArmed, intro = '') {
  *                    含糊收尾要公平得多。
  *   手动模式     —— 沿用原样：「开始抢答」念完即开抢。
  */
-function r3SpeakGoAndArm(onArmed) {
+function r3SpeakGoAndArm(onArmed, cue = '开始抢答') {
   const arm = () => {
     if (state.r3.currentQIdx == null) return;   // 期间已跳过本题
     state.r3.buzzState = 'armed';
@@ -1703,9 +1704,9 @@ function r3SpeakGoAndArm(onArmed) {
   if (!window.IS_CONTROL) { arm(); return; }
   if (state.r3.autoRead) {
     // 用阿拉伯数字而非「三二一」：预热缓存里存的就是 '1'~'10'，能直接命中，不必现合成
-    speakQueue(['开始抢答', '3', '2', '1'], () => playBuzzBeep(arm));
+    speakQueue([cue, '3', '2', '1'], () => playBuzzBeep(arm));
   } else {
-    speak('开始抢答', { onend: arm });
+    speak(cue, { onend: arm });
   }
 }
 
@@ -1782,15 +1783,14 @@ function r3EarlyBuzz(teamId, onDone) {
   save();
 
   const resume = () => {
-    state.r3.buzzState = 'prearm';   // 回到抢跑判定窗口，再念一次口令
+    state.r3.buzzState = 'prearm';   // 回到抢跑判定窗口，重新发一次令
     save();
-    r3SpeakGoAndArm(onDone);
+    // 口令交给 r3SpeakGoAndArm 念（它后面还要接 3、2、1、滴），
+    // 这里不能自己先念一遍「继续抢答」，否则会连着念两句口令
+    r3SpeakGoAndArm(onDone, '继续抢答');
   };
   if (window.IS_CONTROL) {
-    speakQueue([
-      `${team.name}抢答违规，扣${scoreToSpeech(Math.abs(delta))}，本题失去抢答资格`,
-      '继续抢答',
-    ], resume);
+    speakQueue([`${team.name}抢答违规，扣${scoreToSpeech(Math.abs(delta))}，本题失去抢答资格`], resume);
   } else {
     resume();
   }
@@ -1854,15 +1854,17 @@ function r3AllTeamsExcluded() {
 function r3OpenSupplement() {
   if (state.r3.currentQIdx == null) return false;
   if (r3AllTeamsExcluded()) return false;
-  state.r3.buzzState      = 'armed';
+  // 进 prearm 而不是直接 armed：补抢也要走完整发令（口令 → 3、2、1 → 滴）。
+  // 否则同一道题里两次开抢的规则不一致 —— 第一次要等滴声，续抢却是话音一落就能按，
+  // 选手无所适从，抢跑判罚也就失去了依据。计时由 r3SpeakGoAndArm 的 arm() 起。
+  state.r3.buzzState      = 'prearm';
   state.r3.buzzedTeam     = null;
   state.r3.selectedTeam   = null;
   state.r3.selectedMember = null;
   state.showAnswerOnDisplay = false;
   state.showScoresOnDisplay = false;
   save();
-  if (window.IS_CONTROL) speak('继续抢答');
-  startTimer(state.r3.timerSec * 1000, 3);
+  r3SpeakGoAndArm(null, '继续抢答');
   return true;
 }
 
