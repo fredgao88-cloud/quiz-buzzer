@@ -69,11 +69,16 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 #q-image-missing{margin-top:18px;padding:16px 28px;border-radius:10px;border:2px dashed var(--red);color:var(--red);font-size:18px;text-align:center}
 
 /* ── 抢答横幅 ── */
-#buzz-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:10}
-#buzz-banner{padding:28px 60px;border-radius:20px;font-size:clamp(28px,4vw,52px);font-weight:900;text-align:center;letter-spacing:2px;opacity:0;transition:opacity .3s}
-#buzz-banner.show-armed{opacity:1;background:#14532d88;border:4px solid var(--green);color:var(--green);box-shadow:0 0 60px #22c55e55;animation:pulse-glow-g 1s ease-in-out infinite}
-#buzz-banner.show-locked{opacity:1;background:#1e3a5f88;border:4px solid var(--accent);color:#fff;box-shadow:0 0 60px #3b82f655;animation:slide-in .4s ease-out}
-#buzz-banner.show-violation{opacity:1;background:#7f1d1d88;border:4px solid var(--red);color:var(--red);box-shadow:0 0 60px #ef444455;animation:shake .4s ease-out}
+/* 抢答提示条：原先是 inset:0 的全覆盖层、居中一块大横幅，正好压住题干和选项。
+   改为题目【正上方】的一条小胶囊 —— 字号小但配色鲜艳，远处看得见，且不遮挡任何内容。
+   走正常文档流（不是绝对定位），所以永远不会和题目重叠；隐藏时 display:none 不占位。 */
+#buzz-overlay{flex:0 0 auto;display:flex;justify-content:center;width:100%;pointer-events:none}
+#buzz-banner{display:none;padding:7px 22px;border-radius:999px;font-size:clamp(15px,1.7vw,24px);font-weight:800;text-align:center;letter-spacing:1px;margin-bottom:16px;white-space:nowrap}
+#buzz-banner.show-armed{display:inline-block;background:#052e16;border:2px solid #22c55e;color:#4ade80;box-shadow:0 0 20px #22c55e99;animation:buzz-tip-glow 1s ease-in-out infinite}
+/* 等待发令：这是【警示】（此时抢按要扣分），不能用和「开始抢答」一样的绿色 */
+#buzz-banner.show-warn{display:inline-block;background:#451a03;border:2px solid #f59e0b;color:#fcd34d;box-shadow:0 0 20px #f59e0b99}
+#buzz-banner.show-violation{display:inline-block;background:#450a0a;border:2px solid #ef4444;color:#fca5a5;box-shadow:0 0 20px #ef444499;animation:shake .4s ease-out}
+@keyframes buzz-tip-glow{0%,100%{box-shadow:0 0 14px #22c55e66}50%{box-shadow:0 0 30px #22c55ecc}}
 
 @keyframes pulse-glow-g{0%,100%{box-shadow:0 0 40px #22c55e44}50%{box-shadow:0 0 80px #22c55e99}}
 @keyframes slide-in{0%{transform:scale(.7);opacity:0}100%{transform:scale(1);opacity:1}}
@@ -252,6 +257,8 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 <div id="main">
   <!-- question area -->
   <div id="q-area">
+    <!-- 抢答提示条：放在题目【上方】，不再盖住题干与选项 -->
+    <div id="buzz-overlay"><div id="buzz-banner"></div></div>
     <div id="no-q-hint">等待开始...</div>
     <div id="q-stem" style="display:none"></div>
     <!-- 图片外包一层：标记层按图片【显示尺寸】绝对定位，坐标用百分比，缩放自动跟随 -->
@@ -262,8 +269,6 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
     <div id="q-image-missing" style="display:none"></div>
     <div id="q-options" style="display:none"></div>
     <div id="q-answer-box" style="display:none"></div>
-    <!-- buzz overlay -->
-    <div id="buzz-overlay"><div id="buzz-banner"></div></div>
   </div>
 
   <!-- scores bar -->
@@ -710,7 +715,7 @@ function updateBuzzBanner() {
     // 系统读题模式下发令是「开始抢答 → 3 → 2 → 1 → 滴」，得说清等的是那声滴
     showBuzzBanner(state.r3.autoRead
       ? '听到「滴」声才可抢答 — 提前抢按扣分'
-      : '请等待「开始抢答」口令 — 抢按扣分', 'show-armed');
+      : '请等待「开始抢答」口令 — 抢按扣分', 'show-warn');
   } else if (bs === 'locked' || bs === 'supplement') {
     // 抢答成功【不再在题目上盖横幅】——那块浮层正好压住题干和选项，
     // 抢到的队伍还得盯着题作答，被挡住最难受。改为在下方记分牌上高亮该队
