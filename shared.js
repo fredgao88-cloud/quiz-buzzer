@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-28.13';
+const APP_BUILD = '2026-07-28.14';
 
 const TEAM_COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7'];
 
@@ -204,13 +204,7 @@ function defaultState() {
       timerSec:       60,
       spotJudge:      {},    // {spotKey: true/false} 评委勾选结果
       extraSpots:     [],    // 评委现场认定额外找茬点
-      imageFiles: {          // imageKey → 图片文件路径（相对 html 所在目录）
-        '图A': 'images/图A.png',
-        '图B': 'images/图B.png',
-        '图C': 'images/图C.png',
-        '图D': 'images/图D.png',
-        '图E': 'images/图E.png',
-      },
+      // 图片路径不在这里存 —— 写在题库 spot 题的 image 字段里，见 getR4ImageSrc
       // 找茬点在图上的位置：{ imageKey: { spotKey: {x, y} } }，x/y 是相对图片
       // 【显示尺寸】的百分比（0~100），所以换分辨率、换屏幕都不用重标。
       // 不写进 questions.json：题库是导入件，坐标是跟着本地图片走的现场配置。
@@ -416,16 +410,21 @@ function applyTeamScore(teamId, roundKey, delta) {
   return actual;
 }
 
-/** 第四环节：imageKey → 图片文件路径（可用 setR4ImageFile 覆盖默认约定） */
+/**
+ * 第四环节：imageKey → 图片路径。
+ *
+ * 路径写在题库里（spot 题的 image 字段，相对 html 所在目录），不写就按
+ * images/{imageKey}.png 的默认约定找。
+ *
+ * 早先这里支持在设置里上传图片、以 base64 存进 localStorage —— 已移除：
+ * localStorage 每域名只有约 5MB，五张现场照片转 base64 就能撑爆，
+ * 一旦写入失败连分数都存不进去。图片放进 images/ 目录既不占额度，
+ * 换图也只是替换一个文件，比走界面上传更省事。
+ */
 function getR4ImageSrc(imageKey) {
   if (!imageKey) return null;
-  return state.r4.imageFiles?.[imageKey] || `images/${imageKey}.png`;
-}
-
-function setR4ImageFile(imageKey, path) {
-  if (!state.r4.imageFiles) state.r4.imageFiles = {};
-  state.r4.imageFiles[imageKey] = path;
-  save();
+  const q = state.questions.find(x => x.type === 'spot' && x.imageKey === imageKey);
+  return q?.image || `images/${imageKey}.png`;
 }
 
 // ── 找茬点坐标（大屏答对后在图上打标记用）──────────

@@ -4919,6 +4919,7 @@
    "round": 4,
    "type": "spot",
    "imageKey": "图A",
+   "image": "images/图A.png",
    "stem": "场景图A：综合服务违规找茬",
    "spots": [
     {
@@ -4969,6 +4970,7 @@
    "round": 4,
    "type": "spot",
    "imageKey": "图B",
+   "image": "images/图B.png",
    "stem": "场景图B：综合服务违规找茬",
    "spots": [
     {
@@ -5019,6 +5021,7 @@
    "round": 4,
    "type": "spot",
    "imageKey": "图C",
+   "image": "images/图C.png",
    "stem": "场景图C：综合服务违规找茬",
    "spots": [
     {
@@ -5069,6 +5072,7 @@
    "round": 4,
    "type": "spot",
    "imageKey": "图D",
+   "image": "images/图D.png",
    "stem": "场景图D：综合服务违规找茬",
    "spots": [
     {
@@ -5119,6 +5123,7 @@
    "round": 4,
    "type": "spot",
    "imageKey": "图E",
+   "image": "images/图E.png",
    "stem": "场景图E：综合服务违规找茬",
    "spots": [
     {

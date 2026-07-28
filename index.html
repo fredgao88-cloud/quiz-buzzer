@@ -1081,7 +1081,9 @@ function renderR4Readiness() {
       <span class="r4rd-img" data-key="${escapeAttr(key)}" style="font-size:12px;color:var(--muted);min-width:96px">图片检测中…</span>
       <span style="font-size:12px;color:${total ? 'var(--green)' : 'var(--red)'}">答案 ${total} 处</span>
       <span style="font-size:12px;color:${posColor}">坐标 ${done}/${total}</span>
-      <span style="font-size:11px;color:var(--muted)">${state.r4.imageFiles?.[key]?.startsWith('data:') ? '已上传' : '用 images/ 默认文件'}</span>
+      <button class="btn-ghost btn-sm" onclick="openSpotMarker('${escapeAttr(key)}')"
+              ${total ? '' : 'disabled'}>标注找茬点</button>
+      <code style="font-size:11px;color:var(--muted)">${escapeHtml(getR4ImageSrc(key))}</code>
     </div>`;
   }).join('');
 
@@ -3277,7 +3279,7 @@ function renderRoundSettings(r) {
   // 这几块的内容由各自的 render 函数填，容器刚建好才能填
   if (r <= 3) refreshDrawCfgHint(r);
   if (r === 3) renderKeymapEditors();
-  if (r === 4) { renderR4Readiness(); renderR4ImageEditors(); }
+  if (r === 4) renderR4Readiness();
   const ta = document.getElementById('s-rules-' + r);
   if (ta) ta.value = (state.roundRules && state.roundRules[r] != null) ? state.roundRules[r] : '';
   refreshRulesPreview(r);
@@ -3553,23 +3555,19 @@ function setBeepGain(v) {
 }
 
 function r4ImageSection() {
-  return `<div class="s-section"><h3>素材就绪</h3>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
-      图题<b>不在赛前分配</b>——轮到某队翻牌，翻开那一刻才随机抽一张。
-      赛前只需确认素材齐不齐：图片、答案（找茬点）、坐标标注。
+  return `<div class="s-section"><h3>场景图与答案</h3>
+    <div style="font-size:12px;color:var(--muted);line-height:1.9;margin-bottom:8px">
+      图题<b>不在赛前分配</b>——轮到某队翻牌，翻开那一刻才随机抽一张。<br>
+      <b>图片</b>：把文件放进项目的 <code>images/</code> 目录即可，无需上传。默认按
+      <code>images/{图号}.png</code> 找；想用别的文件名，在题库该题里加
+      <code>"image": "images/xxx.jpg"</code> 指定路径。<br>
+      <b>答案（找茬点）</b>：写在题库 spot 题的 <code>spots</code> 里，改完重新
+      【导入题库 JSON】。清单按题库自动生成，题库有几道图题就列几行，<b>不限 5 张</b>。<br>
+      <b>坐标</b>：点【标注找茬点】在图上标出每处的位置——比赛时评委勾中哪处，
+      大屏就在对应位置打绿圈✓；公布答案时没找到的点用红色虚线圈标出。
+      <b>不标坐标不影响计分</b>，只是大屏不画标记。
     </div>
     <div id="r4-readiness"></div>
-  </div>
-  <div class="sep"></div>
-  <div class="s-section"><h3>场景图</h3>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
-      清单按题库里的图题（type: spot）自动生成，题库有几张就列几行。
-      不上传则用项目 <code>images/</code> 目录下的同名文件（如 图A.png）。</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
-      点【标注找茬点】在图上标出每处违规的位置——比赛时评委勾中哪处，<b>大屏就在图上对应位置打绿圈✓</b>；
-      公布答案时没找到的点会用红色虚线圈标出。<b>不标坐标不影响计分</b>，只是大屏不画标记。
-    </div>
-    <div id="r4img-editors"></div>
   </div>`;
 }
 
@@ -3941,27 +3939,6 @@ function renderKeymapEditors() {
     </div>`).join('');
 }
 
-function renderR4ImageEditors() {
-  const box = document.getElementById('r4img-editors');
-  if (!box) return;                    // 不在识图找茬页，容器不存在
-  const keys = r4ImageKeys();
-  box.innerHTML = keys.map(k => `
-    <div class="row" style="margin-top:8px;align-items:flex-start">
-      <div>
-        <label>${k}</label>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
-          <button class="btn-ghost btn-sm" onclick="document.getElementById('r4img-file-${k}').click()">上传</button>
-          <button class="btn-ghost btn-sm" id="r4img-clear-${k}" onclick="clearR4Image('${k}')" style="display:none">清除</button>
-          <button class="btn-ghost btn-sm" onclick="openSpotMarker('${k}')">标注找茬点</button>
-          <input type="file" id="r4img-file-${k}" accept="image/*" style="display:none" onchange="loadR4Image('${k}',this)">
-          <img id="r4img-preview-${k}" style="display:none;height:44px;border-radius:6px;border:1px solid var(--border,#1e3a5f);object-fit:cover">
-          <span id="r4img-hint-${k}" style="font-size:11px;color:var(--muted)"></span>
-          <span id="r4pos-hint-${k}" style="font-size:11px"></span>
-        </div>
-      </div>
-    </div>`).join('');
-  keys.forEach(refreshR4ImageUI);
-}
 // ── 找茬点标注器 ──────────────────────────────────
 // 在图上点一下就把当前选中的找茬点定位到那里；大屏答对时按这个坐标打绿圈。
 // 坐标存成相对图片显示尺寸的百分比，所以标注窗口和大屏尺寸不同也对得准。
@@ -3980,7 +3957,7 @@ function openSpotMarker(imageKey) {
 function closeSpotMarker() {
   document.getElementById('marker-overlay').classList.remove('open');
   _markerKey = _markerSpot = null;
-  renderR4ImageEditors();
+  renderR4Readiness();
   render();
 }
 function pickMarkerSpot(key) { _markerSpot = key; renderSpotMarker(); }
@@ -4040,42 +4017,6 @@ function clearAllSpotPos() {
   renderSpotMarker();
 }
 
-function loadR4Image(key, input) {
-  const f = input.files[0]; if (!f) return;
-  const r = new FileReader();
-  r.onload = e => { setR4ImageFile(key, e.target.result); refreshR4ImageUI(key); render(); };
-  r.readAsDataURL(f);
-  input.value = '';
-}
-function clearR4Image(key) {
-  if (state.r4.imageFiles) delete state.r4.imageFiles[key];   // 回落到 images/图X.png 默认约定
-  save();
-  refreshR4ImageUI(key);
-  render();
-}
-function refreshR4ImageUI(key) {
-  const prev = document.getElementById(`r4img-preview-${key}`);
-  const clr  = document.getElementById(`r4img-clear-${key}`);
-  const hint = document.getElementById(`r4img-hint-${key}`);
-  if (!prev) return;
-  const isCustom = !!(state.r4.imageFiles?.[key]?.startsWith('data:'));
-  clr.style.display = isCustom ? '' : 'none';
-  prev.onload  = () => { prev.style.display = ''; hint.textContent = ''; };
-  prev.onerror = () => { prev.style.display = 'none'; hint.textContent = '未找到默认文件，请上传'; };
-  prev.src = getR4ImageSrc(key);
-
-  // 标注进度：标满才提示绿色，否则黄色提醒还差几个
-  const posHint = document.getElementById(`r4pos-hint-${key}`);
-  if (posHint) {
-    const q = state.questions.find(x => x.type === 'spot' && x.imageKey === key);
-    const total = q?.spots?.length || 0;
-    const done  = r4SpotPosCount(key);
-    posHint.textContent = total ? `已标注 ${done}/${total} 处` : '题库中无此图题';
-    posHint.style.color = !total ? 'var(--muted)'
-                        : done === total ? 'var(--green)'
-                        : done ? 'var(--yellow)' : 'var(--red)';
-  }
-}
 function forceHintClick() {
   _forceClicks++;
   if (_forceClicks >= 3) {
