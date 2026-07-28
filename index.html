@@ -1328,6 +1328,18 @@ function renderP3() {
           `<button class="member-btn${i===state.r3.selectedMember?' active':''}" onclick="r3SetMem(${i})">${escapeHtml(m)}</button>`
         ).join('')
       : '';
+  } else if (state.r3.currentQIdx != null && state.r3.lastBuzzTeam != null) {
+    // 本题有过抢答、但当前没有队伍处于作答状态（判完分 / 超时 / 开放补抢）。
+    // 这一段以前是直接把整个框藏起来，于是操作员看到的是「提示要选队员，
+    // 可页面上根本没有队员可选」—— 最难查的那类故障。现在写清楚发生了什么。
+    const last = state.teams.find(t => t.id === state.r3.lastBuzzTeam);
+    bi.style.display = '';
+    document.getElementById('r3-buzz-team').innerHTML =
+      `<span style="color:var(--muted);font-size:13px">当前无人作答</span>`;
+    document.getElementById('r3-member-hint').innerHTML =
+      `<span style="color:var(--muted)">上一次抢答：<b style="color:${last ? tColor(last) : '#888'}">${escapeHtml(last?.name || '?')}</b>`
+      + `（已判分或已超时）。要继续判分，请先由某队抢答 —— 可用上方【手动指定抢答队伍】。</span>`;
+    document.getElementById('r3-member-btns').innerHTML = '';
   } else {
     bi.style.display = 'none';
   }
@@ -2822,7 +2834,19 @@ function r3SetMem(i) { r3SelectMember(i); render(); }
 function doR3(correct) {
   if (_r3Locked) return;   // 防重复判分（可能与自动超时撞在一起）
   const ev = r3Score(correct);
-  if (!ev) return alert('请先选择回答队员');
+  if (!ev) {
+    // r3Score 在「没有队伍抢答」和「没选队员」两种情况下都返回 null。
+    // 以前一律提示「请先选择回答队员」—— 可前一种情况下页面上根本没有队员
+    // 可选（队员框只在抢答锁定时才渲染），操作员会彻底卡住。分开说清楚。
+    if (state.r3.selectedTeam == null) {
+      alert('本题还没有队伍抢答成功，无法判分。\n\n'
+          + '可能是：抢答器按键没生效，或本次抢答已因超时/判分结束。\n'
+          + '可用题目上方的【手动指定抢答队伍】按钮直接指定，再判分。');
+    } else {
+      alert('请先选择回答队员（抢答队伍下方的队员按钮）。');
+    }
+    return;
+  }
   _r3Locked = true;
   stopTimer(); cdSpoken.clear();
   // ⚠️ 答错【绝对不能】公布答案：本题还要继续让其他队抢，答案一亮全场就都知道了。

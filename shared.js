@@ -1696,7 +1696,11 @@ function r3TryBuzz(teamId, onViolationDone) {
   state.r3.buzzState      = 'locked';
   state.r3.buzzedTeam     = teamId;
   state.r3.selectedTeam   = teamId;
-  state.r3.selectedMember = null;
+  // 预选第一名队员，而不是留空。留空时选项不可点、判分按钮也是灰的，
+  // 操作员必须先找到队员按钮点一下才能判分 —— 而队伍抢到后是【先口头作答】，
+  // 操作员往往这时才知道是谁在答，被这一步卡住的同时 15 秒答题倒计时还在跑。
+  // 预选后判分链路立即可用，答完再改选人即可（个人分按最终选中的人记）。
+  state.r3.selectedMember = 0;
   state.r3.buzzPulse      = (state.r3.buzzPulse || 0) + 1;
   state.r3.lastBuzzTeam   = teamId;
   // 抢答成功改在记分牌上体现（大屏不再往题目上盖横幅，免得挡住抢到的队看题），
