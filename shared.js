@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-28.10';
+const APP_BUILD = '2026-07-28.11';
 
 const TEAM_COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7'];
 
@@ -187,6 +187,9 @@ function defaultState() {
       selectedMember:  null,
       buzzPulse:       0,
       lastBuzzTeam:    null,
+      // 发令倒数当前念到几：3/2/1，0=正在响「滴」，null=不在倒数。
+      // 大屏据此把右上角倒计时牌切成倒数画面（见 display.html updateTimer）。
+      goCount:         null,
       excludedTeams:   [],   // 本题已抢答过（判错/超时）的队伍 id，防止重复抢答
       currentReadText: '',
     },
@@ -757,22 +760,32 @@ function speak(text, opts = {}) {
   _speakOne(text, _withSpeechWatchdog([text], opts.onend), seq, opts);
 }
 
-/** 顺序播放多段文本；全部播完后调用 onAllDone */
-function speakQueue(segments, onAllDone) {
-  if (!isTTSAvailable()) { onAllDone?.(); return; }
+/**
+ * 顺序播放多段文本；全部播完后调用 onAllDone。
+ * onSegment(text) 在每一段【开始播之前】调用 —— 发令倒数要靠它把「现在念到几」
+ * 同步到大屏的倒计时牌上，光有声音、屏上不动，远处的选手对不上拍子。
+ * TTS 不可用时也会依次回调，保证屏上倒数不会因为静音就不走。
+ */
+function speakQueue(segments, onAllDone, onSegment) {
+  if (!isTTSAvailable()) {
+    if (onSegment) segments.forEach(t => onSegment(t));
+    onAllDone?.();
+    return;
+  }
   _cancelAll();
   _ttsQueue = [...segments];
   _prefetchAll(_ttsQueue);          // 先并行发起全部合成，再顺序播放
-  _drainQueue(_withSpeechWatchdog(_ttsQueue, onAllDone), _speakSeq);
+  _drainQueue(_withSpeechWatchdog(_ttsQueue, onAllDone), _speakSeq, onSegment);
 }
 
-function _drainQueue(onAllDone, seq) {
+function _drainQueue(onAllDone, seq, onSegment) {
   if (seq !== _speakSeq) return;                       // 整个队列已被打断
   if (!_ttsQueue.length) { _ttsBusy = false; onAllDone?.(); return; }
   _ttsBusy = true;
   const text = _ttsQueue.shift();
-  if (!text) { _drainQueue(onAllDone, seq); return; }
-  _speakOne(text, () => _drainQueue(onAllDone, seq), seq);
+  if (!text) { _drainQueue(onAllDone, seq, onSegment); return; }
+  onSegment?.(text);
+  _speakOne(text, () => _drainQueue(onAllDone, seq, onSegment), seq);
 }
 
 function stopSpeak() {
@@ -1662,6 +1675,7 @@ function r3StartQuestion(qIdx, onArmed, intro = '') {
   if (!q) return false;
   state.r3.currentQIdx     = qIdx;
   state.r3.buzzState       = 'reading';
+  state.r3.goCount         = null;
   state.r3.buzzedTeam      = null;
   state.r3.selectedTeam    = null;
   state.r3.selectedMember  = null;
@@ -1704,6 +1718,7 @@ function r3SpeakGoAndArm(onArmed, cue = '开始抢答') {
   const arm = () => {
     if (state.r3.currentQIdx == null) return;   // 期间已跳过本题
     state.r3.buzzState = 'armed';
+    state.r3.goCount   = null;                  // 倒数结束，倒计时牌交回答题计时
     save();
     onArmed?.();
     startTimer(state.r3.timerSec * 1000, 3);
@@ -1711,7 +1726,16 @@ function r3SpeakGoAndArm(onArmed, cue = '开始抢答') {
   if (!window.IS_CONTROL) { arm(); return; }
   if (state.r3.autoRead) {
     // 用阿拉伯数字而非「三二一」：预热缓存里存的就是 '1'~'10'，能直接命中，不必现合成
-    speakQueue([cue, '3', '2', '1'], () => playBuzzBeep(arm));
+    speakQueue([cue, '3', '2', '1'], () => {
+      state.r3.goCount = 0;   // 0 = 正在响「滴」，大屏据此把牌面切成绿色的「滴」
+      save();
+      playBuzzBeep(arm);
+    }, seg => {
+      // 把「现在念到几」同步到大屏倒计时牌：口令那段不是数字，牌面先清空待命
+      const n = parseInt(seg, 10);
+      state.r3.goCount = Number.isFinite(n) ? n : null;
+      save();
+    });
   } else {
     speak(cue, { onend: arm });
   }
@@ -1919,6 +1943,7 @@ function r3Timeout(skipAnnounce = true) {
 /** 清空抢答状态回到 idle（供超时/重置复用） */
 function r3ResetBuzz() {
   state.r3.buzzState      = 'idle';
+  state.r3.goCount        = null;
   state.r3.buzzedTeam     = null;
   state.r3.selectedTeam   = null;
   state.r3.selectedMember = null;
@@ -2271,6 +2296,7 @@ function clearAllScores() {
 
 function _resetR3() {
   state.r3.buzzState      = 'idle';
+  state.r3.goCount        = null;
   state.r3.buzzedTeam     = null;
   state.r3.selectedTeam   = null;
   state.r3.selectedMember = null;
