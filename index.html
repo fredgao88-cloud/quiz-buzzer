@@ -2791,7 +2791,7 @@ function r3SkipQ() {
 }
 
 // ── R3 系统读题：整环节自跑 ────────────────────────
-// 开启后主持人只管判分：规则读完自动出第一题，本题收尾后自动出下一题，
+// 开启后操作员只需点选选手所报的答案：规则读完自动出第一题，本题收尾后自动出下一题，
 // 直到出满配置的题数或池子抽空。任何手动操作都会撤掉待触发的自动出题。
 let _r3AutoTimer = null;
 function r3CancelAuto() {
@@ -3497,7 +3497,7 @@ function r3AutoReadSection() {
   return `<div class="s-section"><h3>系统读题</h3>
     <label style="display:inline-flex;align-items:center;gap:6px;margin:0 0 8px;font-size:14px">
       <input type="checkbox" ${on ? 'checked' : ''} onchange="r3SetAutoRead(this.checked)">
-      开启后本环节由系统自动进行，主持人只管判分
+      开启后本环节由系统自动进行，操作员只需点选选手所报的答案
     </label>
     <div style="font-size:12px;color:var(--muted);line-height:1.9">
       点【开始本环节】后，系统依次完成：<br>
@@ -3506,6 +3506,9 @@ function r3AutoReadSection() {
       ③ 念<b>「开始抢答」→ 3 → 2 → 1 → 「滴」</b>，<b style="color:var(--yellow)">滴声响起才可抢答</b><br>
       ④ 判分播报完，停 2 秒自动出下一题，直到出满上面配的「出题数」<br>
       <span style="color:var(--yellow)">滴声之前抢按 = 抢跑违规，扣 ${Math.abs(getScoreCfg('r3').wrong)} 分并没收本题抢答资格。</span><br>
+      <b>操作员在本环节要做的只有一件事：某队抢到后，点一下选手口头报出的那个选项。</b>
+      对错判定、加减分、语音播报、出下一题全部由系统完成 —— 选手是口头作答，
+      系统无从知道他报的是哪一项，这一步无法省略。<br>
       点【出题】【跳过此题】【重置抢答】会中断自动流程，之后可继续手动操作。
     </div>
     <div class="row" style="margin-top:8px">
