@@ -3917,16 +3917,6 @@ function setRoundFlipTimerSec(r, v) {
   save(); refreshRoundSettings(); render();
 }
 
-// ── R4 场景图上传（图A~图E）────────────────────────
-/**
- * 场景图清单 —— 按题库里的图题动态生成，不再写死 图A~图E。
- * 导入几张图题就出现几行，图池想扩到 8 张、10 张只要改题库，不用动代码。
- * 题库还没导入时回退到默认五张，免得设置页空白一片。
- */
-function r4ImageKeys() {
-  const keys = r4ImagePool().map(q => q.imageKey || q.id).filter(Boolean);
-  return keys.length ? keys : ['图A','图B','图C','图D','图E'];
-}
 /** 抢答器键位编辑器（在「③ 擂台抢答」页里） */
 function renderKeymapEditors() {
   const box = document.getElementById('keymap-editors');
