@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-29.20';
+const APP_BUILD = '2026-07-29.21';
 
 // 本页面实例的唯一标识，随广播一起发出。
 // 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
@@ -241,6 +241,8 @@ function defaultState() {
       themeWinners:    [],   // 每令题擂主 teamId
       turnPulse:       0,    // 轮次自增计数。控制台据此判断「该报下一位了」——
                              // 同一队一轮里会被轮到多次，光比队号会漏报
+      currentMemberIdx: null,// 本轮作答的队员（必选）。每轮转一次就清空重选 ——
+                             // 飞花令是队内轮着说，不同轮次很可能换人
       isTiebreak:      false,// 当前令题是否为并列加赛（只有并列队参加）
     },
 
@@ -1568,6 +1570,8 @@ function r2ScoreCurrent(correct) {
   const delta  = correct ? getScoreCfg('r2').correct : 0;   // 分值按环节配置，不读题库
   const actual = applyTeamScore(teamId, 'r2', delta);
   const mIdx = state.r2.currentMemberIdx;
+  // 个人分：与①③⑤一致，谁答的记谁头上，供赛后评「最佳个人」
+  if (mIdx != null) team.memberScores[mIdx] = (team.memberScores[mIdx] || 0) + actual;
   const event = {
     round: 2, teamId, teamName: team.name,
     memberIdx: mIdx,
@@ -2056,10 +2060,9 @@ function scoreR4(teamIdx) {
   const raw     = found * perSpot;
   const capped  = cfg4.cap == null ? raw : Math.min(raw, cfg4.cap);
   const actual  = applyTeamScore(team.id, 'r4', capped);
-  // 队员可选可不选。选了只写进流水（谁代表本队指认的），【不加个人分】——
-  // 找茬是整队一起找的，把分算到某一个人头上会让「最佳个人」失真；
-  // 而且它是可选项，有的队选了有的没选，计分口径就不一致了。
+  // 队员必选，得分同时记进该队员的个人分（与①②③⑤一致，供赛后评「最佳个人」）
   const mIdx = state.r4.currentMemberIdx;
+  if (mIdx != null) team.memberScores[mIdx] = (team.memberScores[mIdx] || 0) + actual;
   const event = {
     round: 4, teamId: team.id, teamName: team.name,
     memberIdx:  mIdx,
@@ -2102,6 +2105,7 @@ function r5StartTheme(themeIdx) {
   state.r5.activeTeams     = [...state.r5.teamOrder];
   state.r5.usedAnswers     = [];
   state.r5.isTiebreak      = false;
+  state.r5.currentMemberIdx = null;
   state.r5.turnPulse       = (state.r5.turnPulse || 0) + 1;
   startTimer(state.r5.timerSec * 1000, 5);   // 新令题第一位，表从头走
   save();
@@ -2126,6 +2130,7 @@ function r5StartTiebreak(themeIdx, rank = 1) {
   state.r5.activeTeams     = [...state.r5.teamOrder];
   state.r5.usedAnswers     = [];
   state.r5.isTiebreak      = true;
+  state.r5.currentMemberIdx = null;
   state.r5.turnPulse       = (state.r5.turnPulse || 0) + 1;
   startTimer(state.r5.timerSec * 1000, 5);
   state.showScoresOnDisplay = false;
@@ -2197,8 +2202,13 @@ function r5ValidAnswer(teamId, answer, opts = {}) {
   state.r5.usedAnswers.push({ teamId, answer, ts: Date.now() });
   const validScore = getScoreCfg('r5').valid;
   const gained     = applyTeamScore(team.id, 'r5', validScore);
+  // 个人分：这一条是谁说的就记谁头上（与①②③④一致）
+  const mIdx = state.r5.currentMemberIdx;
+  if (mIdx != null) team.memberScores[mIdx] = (team.memberScores[mIdx] || 0) + gained;
   const event = {
     round: 5, teamId: team.id, teamName: team.name,
+    memberIdx:  mIdx,
+    memberName: (mIdx != null ? team.members[mIdx] : '') || '',
     correct: true, delta: gained, reason: 'flower_valid',
     answer, ts: Date.now(),
   };
@@ -2266,7 +2276,8 @@ function _r5NextTurn() {
     next = (next + 1) % order.length;
     guard++;
   }
-  state.r5.currentTurnIdx = next;
+  state.r5.currentTurnIdx   = next;
+  state.r5.currentMemberIdx = null;      // 换人作答 → 队员重选
   state.r5.turnPulse = (state.r5.turnPulse || 0) + 1;
   // 轮到下一队 = 表立刻从头走。
   // 曾经想「等『请某队作答』播完再开表」，好让播报时间不占作答时间 —— 结果是
@@ -2600,11 +2611,12 @@ function buildTeamScoresCSV() {
 
 /**
  * 个人成绩表 CSV，用于评「最佳个人」（见 6.2）。
- * 个人分只来自 ①个人必答 与 ③擂台抢答 —— 只有这两个环节有明确的作答人；
- * 且不受队伍封顶裁剪，否则全队答满触顶的队伍反而评不出最佳个人。
+ * 五个环节的得分都会记到当次作答人头上（①自动轮转，②③④⑤由操作员现场点选），
+ * 且不受队伍封顶裁剪 —— 否则全队答满触顶的队伍反而评不出最佳个人。
+ * 擂主加分记在队伍头上、不摊给个人：擂主是靠别人出局产生的，不是某一条答案挣来的。
  */
 function buildMemberScoresCSV() {
-  const rows = [['队伍', '姓名', '个人得分(①个人必答＋③擂台抢答)']];
+  const rows = [['队伍', '姓名', '个人得分(五个环节合计)']];
   const all = [];
   state.teams.forEach(t => {
     (t.members || []).forEach((name, i) => {

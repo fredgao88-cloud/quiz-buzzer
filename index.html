@@ -286,9 +286,10 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
   <div class="card">
     <div class="card-title">队员得分 <span class="pill">评「最佳个人」用</span></div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:8px">
-      只累计 <b>①个人必答</b> 与 <b>③擂台抢答</b>——这两个环节才有明确的作答人。
+      <b>五个环节都记</b>：①按队×队员自动轮转，②③④⑤由操作员现场点选作答人。
       个人分<b>不受队伍封顶影响</b>：全队都答满触顶时，队伍分停在上限，个人分照记，
       否则表现最好的队反而评不出最佳个人。
+      擂主加分记在队伍头上、不摊给个人——擂主是靠别人出局产生的，不是某一条答案挣来的。
     </div>
     <div id="p0-member-scores"></div>
   </div>
@@ -539,6 +540,11 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     <div id="r5-theme-btns" class="row" style="margin-bottom:10px"></div>
     <div id="r5-pool" style="margin-bottom:10px"></div>
     <div id="r5-turn-banner" class="buzz-banner buzz-idle">待机</div>
+    <!-- 本轮作答队员：必选，得分记到该队员头上。每轮转一次清空重选 -->
+    <div id="r5-member-box" style="display:none;margin-top:6px">
+      <div id="r5-member-hint" style="font-size:12px;color:var(--muted);margin-bottom:4px"></div>
+      <div id="r5-member-btns" class="row"></div>
+    </div>
     <div id="r5-team-rows" style="margin-top:8px"></div>
     <div class="row" style="margin-top:10px">
       <button class="btn-ghost btn-sm" onclick="r5NextTheme()">下一令题</button>
@@ -1204,9 +1210,9 @@ function renderR4Readiness() {
 /**
  * 赛前面板的「队员得分」——从总分排名里单拎出来，用于评「最佳个人」。
  *
- * 只有 ①个人必答 和 ③擂台抢答 会累加个人分（这两个环节才有明确的作答人：
- * R2 由队伍共答、R4/R5 是集体行为，都不记到个人头上）。
+ * 五个环节都会累加个人分：①按队×队员自动轮转，②③④⑤由操作员现场点选作答人。
  * 个人分与队伍分解耦、不受封顶裁剪，理由见 shared.js scoreR1() 的注释。
+ * 擂主加分只记队伍分 —— 它是靠别人出局产生的，不是某一条答案挣来的。
  */
 function renderMemberScores() {
   const box = document.getElementById('p0-member-scores');
@@ -1597,6 +1603,24 @@ function renderP5() {
   const active = state.r5.activeTeams || [];
   const curId  = tOrder[state.r5.currentTurnIdx];
   const curT   = state.teams.find(t=>t.id===curId);
+
+  // 本轮作答队员（必选）。只在真的轮到某支在场队伍时才显示
+  const mBox = document.getElementById('r5-member-box');
+  if (mBox) {
+    const show = !!(curT && active.includes(curId));
+    mBox.style.display = show ? '' : 'none';
+    if (show) {
+      const mIdx = state.r5.currentMemberIdx;
+      const c = tColor(curT);
+      document.getElementById('r5-member-btns').innerHTML = (curT.members || [])
+        .map((m,i) => `<button class="member-btn${i===mIdx?' active':''}" onclick="r5SetMem(${i})">${escapeHtml(m)}</button>`)
+        .join('');
+      document.getElementById('r5-member-hint').innerHTML = mIdx != null
+        ? `本轮作答：<b style="color:${c}">${escapeHtml(curT.name)} · ${escapeHtml(curT.members[mIdx]||'')}</b>`
+        : `<span style="color:var(--red);font-weight:700">← 请先选择 ${escapeHtml(curT.name)} 本轮作答的队员</span>`;
+    }
+  }
+
   const banner = document.getElementById('r5-turn-banner');
   if (curT && active.includes(curId)) {
     const c = tColor(curT);
@@ -3249,7 +3273,20 @@ function r5NextTheme() {
   }
   r5RevealTheme(ni);
 }
+/** 选择本轮作答队员。必选 —— 有效答案的分要记到具体某人头上 */
+function r5SetMem(i) { state.r5.currentMemberIdx = i; save(); render(); }
+
+/** 判「有效」前的校验：必须先点明是谁说的，否则这一分没法记到人头上 */
+function r5RequireMember() {
+  if (state.r5.currentMemberIdx == null) {
+    alert('请先选择本轮作答的队员，再判定有效。\n\n队员按钮在轮次提示条下方。');
+    return false;
+  }
+  return true;
+}
+
 function r5DoValid(teamId) {
+  if (!r5RequireMember()) return;
   const ans = prompt('有效内容（留空则不参与查重）：');
   if (ans === null) return;                       // 取消，不推进轮次
   const text = ans.trim() || R5_BLANK_ANSWER;
@@ -3307,6 +3344,7 @@ function r5PickAnswer(answer) {
   if (curId == null || !(state.r5.activeTeams || []).includes(curId)) {
     return alert('当前没有正在作答的队伍，无法记分。');
   }
+  if (!r5RequireMember()) return;
   const r = r5ValidAnswer(curId, answer);
   if (!r) return;
   if (r.duplicate) { alert('这条参考答案刚被占用了，请换一条或点【出局】。'); render(); return; }
