@@ -241,11 +241,26 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 #flower-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);background-size:cover;background-position:center;z-index:5;padding:32px;overflow:hidden}
 /* 令题、轮次条、答案框都不许被压缩；真放不下时只让「已用答案」那一块收缩并内部滚动 */
 #flower-theme,#flower-turn,#flower-accepted,#flower-used-label{flex:0 0 auto}
-#flower-used{flex:0 1 auto;min-height:0;overflow-y:auto}
+#flower-used{flex:0 1 auto;min-height:0;overflow-y:auto;
+  /* 投影屏上没人能去拖滚动条，藏掉它；靠 JS 自动滚到底把最新几条顶上来 */
+  scrollbar-width:none;-ms-overflow-style:none}
+#flower-used::-webkit-scrollbar{display:none}
+/* 真装不下时顶部渐隐：让人一眼看出「上面还有」，而不是以为显示坏了 */
+#flower-used.clipped{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 34px);
+  mask-image:linear-gradient(to bottom,transparent 0,#000 34px)}
 #flower-area.show{display:flex}
 #flower-theme{font-size:clamp(32px,4vw,58px);font-weight:800;color:var(--accent);margin-bottom:10px;letter-spacing:1px;text-shadow:0 3px 12px rgba(0,0,0,.9),0 0 26px rgba(0,0,0,.65)}
 #flower-turn{font-size:clamp(26px,3.2vw,46px);font-weight:800;padding:18px 52px;border-radius:16px;border:4px solid var(--green);color:var(--green);background:#14532dcc;animation:pulse-glow-g 1.2s ease-in-out infinite}
-#flower-used{font-size:clamp(20px,2.4vw,34px);color:var(--text);max-width:min(90vw,1400px);text-align:center;line-height:2;text-shadow:0 1px 6px rgba(0,0,0,.85)}
+/* 已用答案是「背景信息」——给选手扫一眼避重用的，不该跟刚判有效的那条抢注意力。
+   所以字号压小，并拆成一颗颗独立标签彼此拉开；连成一串时挤在一起既难看也难认。 */
+#flower-used{display:flex;flex-wrap:wrap;justify-content:center;align-content:flex-start;
+  gap:10px 14px;max-width:min(88vw,1360px);padding:2px 4px}
+#flower-used .used-item{display:inline-flex;align-items:baseline;gap:7px;
+  font-size:clamp(15px,1.5vw,22px);line-height:1.25;color:var(--text);
+  background:#1e293bb3;border:1px solid var(--border);border-radius:999px;
+  padding:5px 16px;white-space:nowrap;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+#flower-used .used-no{font-size:.8em;font-weight:700;color:var(--muted)}
+#flower-used .used-empty{font-size:clamp(15px,1.5vw,22px);color:var(--muted)}
 /* 刚被判有效的那条答案。
    只在「X队答题正确得N分。下面请Y队答题」这句播报期间亮着，下一队一开表就撤 ——
    窗口就那几秒，所以要够大够抢眼，让全场一眼看清认的是哪句话。
@@ -267,7 +282,7 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
   from{opacity:0;transform:scale(.82) translateY(18px)}
   to  {opacity:1;transform:scale(1)   translateY(0)}
 }
-#flower-used-label{font-size:clamp(17px,1.9vw,28px);color:var(--muted);text-shadow:0 1px 6px rgba(0,0,0,.85)}
+#flower-used-label{font-size:clamp(14px,1.4vw,20px);letter-spacing:2px;color:var(--muted);text-shadow:0 1px 6px rgba(0,0,0,.85)}
 
 /* 全屏无题提示 */
 #no-q-hint{font-size:clamp(22px,2.6vw,40px);font-weight:700;color:var(--muted);text-align:center;padding:40px;text-shadow:0 2px 8px rgba(0,0,0,.85)}
@@ -1085,8 +1100,21 @@ function updateFlowerArea() {
   }
 
   const used = state.r5.usedAnswers || [];
-  document.getElementById('flower-used').textContent =
-    used.map((a,i)=>`${i+1}.${a.answer}`).join('  ') || '（暂无）';
+  document.getElementById('flower-used').innerHTML = used.length
+    ? used.map((a, i) => {
+        const ut = state.teams.find(x => x.id === a.teamId);
+        const uc = ut ? tColor(ut) : 'var(--border)';
+        // 描边用答出这条的队伍色：既是分隔，也顺带告诉全场这条是谁拿走的
+        return `<span class="used-item" style="border-color:${uc}66">`
+             + `<span class="used-no" style="color:${uc}">${i + 1}</span>`
+             + escapeHtml(a.answer) + `</span>`;
+      }).join('')
+    : '<span class="used-empty">（暂无）</span>';
+  // 一道令题最多能用掉 30 多条，屏幕未必装得下。自动滚到底：最新答出的几条
+  // 就在末尾，也是各队最容易撞车、最需要看见的。滚到底同时避免了末行被切一半。
+  const uEl = document.getElementById('flower-used');
+  uEl.scrollTop = uEl.scrollHeight;
+  uEl.classList.toggle('clipped', uEl.scrollHeight > uEl.clientHeight + 1);
 }
 
 // ── 向控制台报告本页代码版本 ──────────────────────
