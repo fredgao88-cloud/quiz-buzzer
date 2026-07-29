@@ -4343,47 +4343,82 @@ speechSynthesis.onvoiceschanged = () => {
     voices.map(v=>`<option value="${escapeAttr(v.name)}"${v.name===state.tts.voiceName?' selected':''}>${escapeHtml(v.name)}</option>`).join('');
 };
 
-// ── 多控制台检测 ─────────────────────────────────
-// 两个控制台同时开是赛中最隐蔽的故障：两边各自朗读、各自跑推进定时器，
-// 还会互相广播状态。状态层已用 rev 版本号挡掉了过期回声（见 shared.js save），
-// 但重复朗读和双份定时器挡不住，只能提醒人去关掉多余的那个。
+// ── 同伴页面探测（多控制台 / 大屏版本不一致）──────────
+// 两个控制台同时开是赛中最隐蔽的故障：两边各自朗读、各自跑推进定时器。
+// 状态层已用 rev 版本号挡掉了过期回声（见 shared.js save），但重复朗读和
+// 双份定时器挡不住，只能提醒人去关掉多余的那个。
+// 大屏跑旧代码同理：两个页面看起来都正常，只是其中一个逻辑是旧的。
 //
-// 握手：开页广播一次 hello；已在运行的页面收到后回一条 ack。
-// 双方都据此亮出告警 —— 不管谁先开的都能发现对方。
-(function detectDuplicateControl() {
-  const myId = Math.random().toString(36).slice(2);
-  let warned = false;
-  const warn = () => {
-    if (warned) return;
-    warned = true;
-    const el = document.getElementById('dup-control-warn');
-    if (el) el.style.display = '';
-    console.warn('[rz] 检测到另一个控制台页面正在运行 —— 两个控制台会互相干扰，请只保留一个');
-  };
-  try {
-    const hb = new BroadcastChannel(BC_NAME);
-    hb.addEventListener('message', e => {
-      const d = e.data;
-      if (!d || d.id === myId) return;
-      if (d.type === 'control-hello') { hb.postMessage({ type:'control-ack', id: myId }); warn(); }
-      else if (d.type === 'control-ack') warn();
-      // 兜底探测：大屏页只读状态、从不 save()，因此从不广播 'state'，
-      // 所以收到别的页面发来的 'state' 就只有一个解释 —— 另有一个控制台在写状态。
-      // ⚠️ 必须比对 from：BroadcastChannel 会把消息送达【同一页面里的其他实例】，
-      // 本页 shared.js 的 bc 一 save() 就会让这个检测器收到自己的广播。
-      // 早先漏了这一步，结果只要操作一下就误报「检测到多个控制台」。
-      // from 缺失（对方跑着旧代码）时宁可不报，也不能误报。
-      else if (d.type === 'state' && d.from && d.from !== PAGE_ID) warn();
-      // 大屏报上来的代码版本：不一致说明它还跑着旧代码
-      else if (d.type === 'build' && d.build !== APP_BUILD) {
-        const el = document.getElementById('stale-display-warn');
-        if (el) { el.style.display = ''; el.title = `大屏版本 ${d.build}，控制台 ${APP_BUILD}。请在大屏窗口按 Ctrl+Shift+R 刷新`; }
-        console.warn(`[rz] 大屏页版本 ${d.build} 与控制台 ${APP_BUILD} 不一致 —— 大屏跑的是旧代码，请刷新大屏`);
-      }
-    });
-    hb.postMessage({ type: 'control-hello', id: myId });
-    hb.postMessage({ type: 'build-ping', build: APP_BUILD });   // 让已打开的大屏报一次版本
-  } catch (e) {}
+// 做成【周期性重新点名】而不是「见到一次就亮灯」：
+// 早先只有 warn() 把红字点亮、没有任何地方熄灭它，于是刷新了大屏、关掉了多余的
+// 控制台，红字仍然挂着 —— 反而误导人以为没修好。现在每 8 秒清空名册重新点名，
+// 对端修好或关掉，下一轮就自动灭灯。
+(function detectPeers() {
+  const dupEl   = document.getElementById('dup-control-warn');
+  const staleEl = document.getElementById('stale-display-warn');
+  let ch;
+  try { ch = new BroadcastChannel(BC_NAME); } catch (e) { return; }
+
+  let roster = new Map();   // pageId → { role, build }
+
+  function refreshBadges() {
+    const peers   = [...roster.values()];
+    const others  = peers.filter(p => p.role === 'control');
+    const stales  = peers.filter(p => p.build && p.build !== APP_BUILD);
+    // 数量要写进按钮文字：只说「有旧版本」的话，人关掉一个看红字还亮，
+    // 会以为是程序没反应，其实是还有第二个没找到。
+    if (dupEl) {
+      dupEl.style.display = others.length ? '' : 'none';
+      dupEl.textContent = `⚠ 检测到多个控制台（另有 ${others.length} 个）`;
+      dupEl.title = others.length
+        ? '两个控制台会各自朗读、各自跑推进定时器，请只保留一个'
+        : '';
+    }
+    if (staleEl) {
+      staleEl.style.display = stales.length ? '' : 'none';
+      staleEl.textContent = `⚠ ${stales.length} 个页面是旧版本，请刷新`;
+      staleEl.title = stales.length
+        ? `对方版本 ${[...new Set(stales.map(p => p.build || '未知'))].join('、')}，本页 ${APP_BUILD}。`
+          + '请在那些窗口按 Ctrl+Shift+R 刷新；找不到的话检查是否有最小化的 Chrome 窗口'
+        : '';
+    }
+  }
+
+  ch.addEventListener('message', e => {
+    const d = e.data;
+    if (!d || d.id === PAGE_ID) return;
+    switch (d.type) {
+      case 'peer-ping':                       // 别人点名 → 报到
+        ch.postMessage({ type:'peer-pong', id: PAGE_ID, role:'control', build: APP_BUILD });
+        break;
+      case 'peer-pong':                       // 有人报到 → 记进名册
+        roster.set(d.id, { role: d.role, build: d.build });
+        break;
+      // ── 兼容还没刷新的旧页面（它们不认识 peer-ping）──
+      case 'control-hello':
+        ch.postMessage({ type:'control-ack', id: PAGE_ID });
+        roster.set(d.id, { role:'control', build: null });
+        break;
+      case 'control-ack':
+        roster.set(d.id, { role:'control', build: null });
+        break;
+      case 'build':                           // 旧版大屏对 build-ping 的应答
+        roster.set(d.id || 'legacy-display', { role:'display', build: d.build });
+        break;
+    }
+  });
+
+  function poll() {
+    roster = new Map();                       // 先清空：关掉的页面不该继续占着名额
+    try {
+      ch.postMessage({ type:'peer-ping',  id: PAGE_ID });
+      ch.postMessage({ type:'control-hello', id: PAGE_ID });   // 兼容旧控制台
+      ch.postMessage({ type:'build-ping', build: APP_BUILD }); // 兼容旧大屏
+    } catch (e) {}
+    setTimeout(refreshBadges, 900);           // 留点时间收集回复再判定
+  }
+  poll();
+  setInterval(poll, 8000);
 })();
 document.getElementById('build-tag').textContent = 'v' + APP_BUILD;
 

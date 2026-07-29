@@ -1037,11 +1037,12 @@ function updateFlowerArea() {
 // 开页广播一次，另外应答控制台的 build-ping（控制台可能比大屏后开）。
 // 版本不一致时由控制台亮红字提示 —— 大屏是给观众看的，不在上面显示任何告警。
 try {
-  bc?.postMessage({ type: 'build', role: 'display', build: APP_BUILD });
+  const ann = () => bc?.postMessage({ type:'peer-pong', id: PAGE_ID, role:'display', build: APP_BUILD });
+  ann();
   bc?.addEventListener('message', e => {
-    if (e.data?.type === 'build-ping') {
-      bc.postMessage({ type: 'build', role: 'display', build: APP_BUILD });
-    }
+    const t = e.data?.type;
+    // peer-ping 是控制台的周期性点名；build-ping 是旧版控制台的问法，一并应答
+    if (t === 'peer-ping' || t === 'build-ping') ann();
   });
 } catch (e) {}
 
