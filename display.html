@@ -103,6 +103,17 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-12px)}75%{transform:translateX(12px)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 
+/* ── 全场暂停遮罩 ──
+   盖在最上层（含飞花令、翻牌等 z-index:5~20 的浮层），让全场一眼看到比赛已暂停。
+   半透明而非纯色：底下的题目仍隐约可见，恢复后观众能接上刚才的思路。 */
+#pause-cover{display:none;position:fixed;inset:0;z-index:60;background:rgba(4,10,20,.82);
+  backdrop-filter:blur(3px);align-items:center;justify-content:center;flex-direction:column;gap:18px}
+#pause-cover.show{display:flex}
+#pause-cover .pc-icon{font-size:clamp(60px,9vw,140px);line-height:1}
+#pause-cover .pc-title{font-size:clamp(34px,5vw,76px);font-weight:900;letter-spacing:6px;color:#fcd34d;
+  text-shadow:0 4px 18px rgba(0,0,0,.9)}
+#pause-cover .pc-sub{font-size:clamp(16px,2vw,30px);color:#cbd5e1;letter-spacing:2px}
+
 /* ── 分数栏 ── */
 /* fixed 贴底＋z-index 高于翻牌/抽签/飞花令等全屏覆盖层（z-index:5)，
    否则 R5 飞花令从进场景到结束全程盖住 #main，分数栏永远显示不出来。 */
@@ -289,6 +300,13 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
     <div id="q-answer-box" style="display:none"></div>
   </div>
 
+  <!-- 全场暂停遮罩 -->
+  <div id="pause-cover">
+    <div class="pc-icon">⏸</div>
+    <div class="pc-title">比 赛 暂 停</div>
+    <div class="pc-sub">请各队原地等候</div>
+  </div>
+
   <!-- scores bar -->
   <div id="scores-bar">
     <div id="scores-grid"></div>
@@ -365,6 +383,7 @@ function fmtMs(ms) {
 
 // ── 主渲染 ──────────────────────────────────────
 function render() {
+  document.getElementById('pause-cover').classList.toggle('show', !!state.paused);
   updateQuestionBg();
   updateRulesWindow();
   updatePrepCover();

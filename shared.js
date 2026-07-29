@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-29.4';
+const APP_BUILD = '2026-07-29.5';
 
 // 本页面实例的唯一标识，随广播一起发出。
 // 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
@@ -150,6 +150,10 @@ function defaultState() {
     scoreCfg: JSON.parse(JSON.stringify(SCORE_CFG_DEFAULT)),
 
     // ── 赛程控制 ────────────────────────────────
+    // 全场暂停：赛中突发情况（设备故障、选手身体不适、争议裁定）时冻结整场。
+    // 暂停期间：倒计时停摆、语音立即停止、抢答器不响应、所有自动推进都不触发。
+    // 放在 state 里而不是页面变量，大屏才能同步显示「已暂停」。
+    paused: false,
     currentRound: 0,         // 0=赛前, 1-5=对应环节
     roundPhase: 'idle',      // idle|running|judging|finished
 
@@ -1767,6 +1771,7 @@ function r3SpeakGoAndArm(onArmed, cue = '开始抢答') {
  * 尝试抢答（在 reading 状态按下 = 违规；armed 状态按下 = 成功）
  */
 function r3TryBuzz(teamId, onViolationDone) {
+  if (state.paused) return false;          // 全场暂停中，抢答器一律不响应
   // 念题正文期间：完全忽略，不扣分、不打断朗读
   if (state.r3.buzzState === 'reading') return false;
   // 违规播报进行中：忽略，否则按住不放会连扣
@@ -2426,6 +2431,18 @@ function resetDraw() {
     orderLocked: false,
     log:         [],
   };
+  save();
+}
+
+/**
+ * 全场暂停 / 继续。
+ * 只管状态与计时器；语音打断、撤销待触发的自动推进由控制台负责
+ * （那些定时器是页面级变量，状态层看不到）——见 index.html doPause()。
+ */
+function setPaused(on) {
+  state.paused = !!on;
+  if (on) { if (state.timer.state === 'running') pauseTimer(); }
+  else    { if (state.timer.state === 'paused')  resumeTimer(); }
   save();
 }
 

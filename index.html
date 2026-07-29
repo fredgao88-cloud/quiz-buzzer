@@ -225,6 +225,8 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
   <span id="stale-display-warn" class="badge badge-red" style="display:none"
         title="大屏页加载的是旧代码，请在大屏窗口按 Ctrl+Shift+R 刷新">⚠ 大屏是旧版本，请刷新</span>
   <span id="build-tag" style="font-size:11px;color:var(--muted)" title="代码版本。控制台与大屏必须一致"></span>
+  <span id="paused-badge" class="badge badge-red" style="display:none;cursor:pointer"
+        onclick="doResume()" title="点此继续">⏸ 全场已暂停 · 点击继续</span>
   <span id="round-badge" class="badge badge-blue">赛前准备</span>
   <button class="btn-ghost btn-sm" onclick="toggleShowScoresBTN()">大屏分数</button>
   <button class="btn-ghost btn-sm" onclick="openSettings()">设置</button>
@@ -310,6 +312,8 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
       <button class="btn-primary" onclick="r1Init()">开始本环节</button>
       <button class="btn-warn btn-sm" onclick="r1ReadQ()">朗读题目</button>
       <button class="btn-primary btn-sm" onclick="r1NextAnswerer()">下一位</button>
+      <button class="btn-ghost btn-sm pause-btn" onclick="doTogglePause()"
+              title="赛中突发情况时冻结全场：倒计时停摆、语音停止、抢答器不响应、自动推进不触发"></button>
       <button class="btn-ghost btn-sm" onclick="doRoundSummary(1)" title="逐队播报本环节得分与总分，并亮出大屏计分板">本环节小结</button>
       <label style="display:inline-flex;align-items:center;gap:4px;margin:0;font-size:12px" title="判分播报完后自动切到下一位答题人">
         <input type="checkbox" id="r1-auto-advance" onchange="r1SetAutoAdvance(this.checked)">判分后自动下一位</label>
@@ -355,6 +359,8 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     <div class="row" style="margin-bottom:10px">
       <button class="btn-primary" onclick="r2Init()">开始本环节</button>
       <button class="btn-warn btn-sm" onclick="r2ReadQ()">朗读题目</button>
+      <button class="btn-ghost btn-sm pause-btn" onclick="doTogglePause()"
+              title="赛中突发情况时冻结全场：倒计时停摆、语音停止、抢答器不响应、自动推进不触发"></button>
       <button class="btn-ghost btn-sm" onclick="doRoundSummary(2)" title="逐队播报本环节得分与总分，并亮出大屏计分板">本环节小结</button>
       <span id="r2-progress" style="color:var(--muted);font-size:12px"></span>
     </div>
@@ -398,6 +404,8 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
       <button class="btn-primary" onclick="r3Init()">开始本环节</button>
       <button class="btn-warn btn-lg" onclick="r3StartQ()">出题（朗读+开始抢答）</button>
       <button class="btn-ghost btn-sm" onclick="r3SkipQ()">跳过此题</button>
+      <button class="btn-ghost btn-sm pause-btn" onclick="doTogglePause()"
+              title="赛中突发情况时冻结全场：倒计时停摆、语音停止、抢答器不响应、自动推进不触发"></button>
       <button class="btn-ghost btn-sm" onclick="doRoundSummary(3)" title="逐队播报本环节得分与总分，并亮出大屏计分板">本环节小结</button>
       <label style="display:inline-flex;align-items:center;gap:4px;margin:0;font-size:12px"
              title="开启后整环节自动进行：读规则→出题→报题→开始抢答 3、2、1 滴→判分后自动下一题">
@@ -447,6 +455,8 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
       <button class="btn-ghost btn-sm" onclick="r4Next()">下一队</button>
       <button class="btn-warn btn-sm" onclick="r4ReadQ()">朗读题目</button>
       <button class="btn-warn btn-sm" onclick="r4StartTimer()">开始计时</button>
+      <button class="btn-ghost btn-sm pause-btn" onclick="doTogglePause()"
+              title="赛中突发情况时冻结全场：倒计时停摆、语音停止、抢答器不响应、自动推进不触发"></button>
       <button class="btn-ghost btn-sm" onclick="doRoundSummary(4)" title="逐队播报本环节得分与总分，并亮出大屏计分板">本环节小结</button>
       <span id="r4-progress" style="color:var(--muted);font-size:12px"></span>
     </div>
@@ -493,6 +503,8 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     <div class="card-title">服务飞花令 <span class="pill" id="r5-score-pill"></span></div>
     <div class="row" style="margin-bottom:8px">
       <button class="btn-primary" onclick="r5Init()">开始本环节</button>
+      <button class="btn-ghost btn-sm pause-btn" onclick="doTogglePause()"
+              title="赛中突发情况时冻结全场：倒计时停摆、语音停止、抢答器不响应、自动推进不触发"></button>
       <button class="btn-ghost btn-sm" onclick="doRoundSummary(5)" title="逐队播报本环节得分与总分，并亮出大屏计分板">本环节小结</button>
       <span id="r5-theme-label" style="font-size:15px;font-weight:700;color:var(--accent)"></span>
     </div>
@@ -801,6 +813,7 @@ function renderDeckHint(n) {
 
 // ── 主渲染 ──────────────────────────────────────
 function render() {
+  renderPauseUI();
   renderTopbar();
   renderTimer();
   renderKmHint();
@@ -814,6 +827,21 @@ function render() {
   // 放在 render() 而非 switchPanel()：r2Init() 是先 switchPanel 再 initCardDeck，
   // 挂在 switchPanel 上会在牌组建好【之前】就算出提示，之后再也不刷新
   renderDeckHint(curPanel);
+}
+
+/** 暂停相关的界面回显：顶栏红字 + 五个环节按钮的文案/配色 */
+function renderPauseUI() {
+  const on = !!state.paused;
+  const badge = document.getElementById('paused-badge');
+  if (badge) badge.style.display = on ? '' : 'none';
+  document.querySelectorAll('.pause-btn').forEach(b => {
+    b.textContent = on ? '▶ 继续本环节' : '⏸ 暂停本环节';
+    b.style.borderColor = on ? 'var(--green)' : 'var(--yellow)';
+    b.style.color       = on ? '#4ade80'      : '#fcd34d';
+    b.style.fontWeight  = on ? '800' : '';
+  });
+  const pp = document.getElementById('btn-timer-pp');
+  if (pp) pp.textContent = on ? '▶ 继续' : '⏸ 暂停';
 }
 
 function renderTopbar() {
@@ -1795,6 +1823,7 @@ function noteBuzzDiag(teamId, msg, ok = false) {
 
 /** 统一的抢答入口：本机键盘与大屏转发过来的都走这里 */
 function handleBuzz(teamId) {
+  if (state.paused) return noteBuzzDiag(teamId, '全场已暂停 —— 点【继续】后才能抢答');
   // 面板没切到③也放行，只要比赛正处在第三环节 —— 主持人翻看别的面板时
   // 选手照样可能抢答，为这个把抢答器锁死不值得
   if (curPanel !== 3 && state.currentRound !== 3) {
@@ -2090,7 +2119,7 @@ function currentRoundHasQuestion() {
   return false;   // R5 飞花令无 currentQIdx
 }
 function announceRulesIfNeeded() {
-  if (!window.IS_CONTROL) return;
+  if (!window.IS_CONTROL || state.paused) return;
   const round = state.currentRound;
   if (round < 1 || round > 5) return;
   // 占位符（{分值}/{秒数}…）在这里就换成当前配置值，念出来才和实际判分一致
@@ -2162,7 +2191,7 @@ let _r1LastFlipPrompt = null;
 // 逃生口：点「当前答题人」里的队员按钮 = 重念本位选手，念完照常开闸。
 let _r1FlipPhase = 'idle';
 function r1AnnounceFlipPromptIfNeeded() {
-  if (!window.IS_CONTROL) return;
+  if (!window.IS_CONTROL || state.paused) return;
   if (state.currentRound !== 1) { _r1LastFlipPrompt = null; return; }
   // 只在「牌已发出、还没翻」时报；已经翻出题目了就不报
   if (state.displayMode !== 'cardflip' || state.r1.currentQIdx != null) return;
@@ -2387,6 +2416,7 @@ function r1CancelAutoAdvance() {
   if (_r1AdvanceTimer) { clearTimeout(_r1AdvanceTimer); _r1AdvanceTimer = null; }
 }
 function r1ScheduleAutoAdvance() {
+  if (state.paused) return;              // 暂停中不自动推进
   if (!state.r1.autoAdvance) return;         // 开关关闭则不自动
   if (state.currentRound !== 1) return;      // 已离开第一环节，别乱切
   r1CancelAutoAdvance();
@@ -2405,6 +2435,7 @@ function r1CancelSubAdvance() {
   if (_r1SubAdvanceTimer) { clearTimeout(_r1SubAdvanceTimer); _r1SubAdvanceTimer = null; }
 }
 function r1ScheduleNextSub() {
+  if (state.paused) return;              // 暂停中不自动推进
   if (state.currentRound !== 1) return;
   r1CancelSubAdvance();
   _r1SubAdvanceTimer = setTimeout(() => {
@@ -2587,7 +2618,7 @@ function r2FlipTimeout() {
 }
 
 function r2AnnounceFlipPromptIfNeeded() {
-  if (!window.IS_CONTROL) return;
+  if (!window.IS_CONTROL || state.paused) return;
   if (state.currentRound !== 2) { _r2LastFlipPrompt = null; return; }
   // 只在「牌已发出、本队还没翻」时报；已经翻出题目了就不报
   if (state.displayMode !== 'cardflip' || state.r2.currentQIdx != null) return;
@@ -2699,6 +2730,7 @@ function r2CancelAdvance() {
   if (_r2AdvanceTimer) { clearTimeout(_r2AdvanceTimer); _r2AdvanceTimer = null; }
 }
 function r2ScheduleNext() {
+  if (state.paused) return;              // 暂停中不自动推进
   if (state.currentRound !== 2) return;
   r2CancelAdvance();
   _r2AdvanceTimer = setTimeout(() => {
@@ -2851,6 +2883,7 @@ function r3CancelAuto() {
  * TTS 的 onend 在 Chrome 上不保证回调，只靠它整个环节会停在半路。
  */
 function r3ScheduleAutoNext(delay = 2000) {
+  if (state.paused) return;              // 暂停中不自动出题
   if (!state.r3.autoRead) return;
   if (state.currentRound !== 3) return;
   r3CancelAuto();
@@ -3019,7 +3052,7 @@ function r4SetMem(i) {
 // 同一队只报一次（_r4LastFlipPrompt 记账），否则每次 render 都会重念。
 let _r4LastFlipPrompt = null;
 function r4AnnounceFlipPromptIfNeeded() {
-  if (!window.IS_CONTROL) return;
+  if (!window.IS_CONTROL || state.paused) return;
   if (state.currentRound !== 4) { _r4LastFlipPrompt = null; return; }
   if (state.cardFlip.context?.round !== 4) return;   // 场上不是本环节的牌组
   if (state.displayMode !== 'cardflip') return;      // 不在等待翻牌
@@ -3121,7 +3154,7 @@ function r5SpeakTheme() {
  * 用 turnPulse 而不是队号去重 —— 同一队在一轮里会被轮到多次，比队号会漏报。
  */
 function r5AnnounceTurnIfNeeded() {
-  if (!window.IS_CONTROL) return;
+  if (!window.IS_CONTROL || state.paused) return;
   if (state.currentRound !== 5) { _r5LastTurnPulse = null; return; }
   if (_r5ThemeIntro) return;                          // 令题还在念
   if (state.displayMode === 'turncard') return;       // 令题还没揭晓
@@ -3342,10 +3375,37 @@ function toggleShowScoresBTN() { toggleShowScores(undefined); }
 function doAdj(teamId, rKey, delta) { adjustScore(teamId, rKey, delta); render(); }
 
 // ── 计时器按钮 ────────────────────────────────────
-function doTimerPP() {
-  if (state.timer.state === 'running') pauseTimer();
-  else if (state.timer.state === 'paused') resumeTimer();
+/**
+ * 全场暂停 / 继续。赛中突发情况（设备故障、选手不适、争议裁定）时按一下冻结全场。
+ *
+ * 冻结的范围必须比「停掉倒计时」大得多，否则暂停期间：语音还在念、
+ * 抢答器还能按、1.2 秒后的自动换人照样触发 —— 等于没暂停。所以这里一并：
+ *   · 掐掉正在播的语音
+ *   · 撤掉所有待触发的自动推进（换人/下一题/续抢/揭晓）
+ *   · 暂停倒计时（setPaused 内做）
+ * 抢答器的拦截在 shared.js 的 r3TryBuzz 里，按 state.paused 判断。
+ *
+ * 继续时【不自动恢复】那些被撤掉的定时器：暂停多半意味着现场情况变了，
+ * 与其猜着替主持人往下走，不如让他自己点下一步。
+ */
+function doTogglePause() { state.paused ? doResume() : doPause(); }
+
+function doPause() {
+  stopSpeak();
+  r1CancelAutoAdvance(); r1CancelSubAdvance(); r2CancelAdvance(); r3CancelAuto();
+  r1CancelReveal();      r2CancelReveal();
+  if (_rulesCloseTimer) { clearTimeout(_rulesCloseTimer); _rulesCloseTimer = null; }
+  setPaused(true);
+  render();
 }
+
+function doResume() {
+  setPaused(false);
+  render();
+}
+
+/** 计时器栏的按钮沿用旧名，行为改为全场暂停（原先只停倒计时，等于没暂停） */
+function doTimerPP() { doTogglePause(); }
 
 // ── 历史面板 ─────────────────────────────────────
 function toggleHistPanel() {
