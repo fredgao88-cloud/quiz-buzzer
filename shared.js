@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-29.32';
+const APP_BUILD = '2026-07-29.33';
 
 // 本页面实例的唯一标识，随广播一起发出。
 // 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
@@ -195,6 +195,10 @@ function defaultState() {
       // 系统读题：开启后整个环节自跑 —— 读规则 → 自动出题 → 报题 → 念「开始抢答」
       // → 三、二、一 → 滴（滴响才开抢）→ 判分后自动出下一题，直到出满题数。
       autoRead:        false,
+      // 跳过规则朗读。用于加赛：总分打平时再开一轮抢答定胜负，规则全场早就听过了，
+      // 而 r3Init() 每次都会重置规则闸门（delete roundRulesDismissed[3]），
+      // 不给这个开关就只能眼睁睁看着规则从头念一遍。
+      skipRules:       false,
       beep:            { ...BEEP_DEFAULT },   // 发令音「滴」的时长与音量，见 getBeepCfg
       buzzState:       'idle',   // idle|reading|armed|locked
       buzzedTeam:      null,
@@ -2841,7 +2845,7 @@ function buildConfigJSON() {
     tts:        state.tts,
     r1:         _pickKeys(state.r1, ['timerSec', 'flipTimerSec', 'autoAdvance']),
     r2:         _pickKeys(state.r2, ['timerSec', 'flipTimerSec']),
-    r3:         _pickKeys(state.r3, ['timerSec', 'autoRead', 'beep']),
+    r3:         _pickKeys(state.r3, ['timerSec', 'autoRead', 'skipRules', 'beep']),
     r4:         _pickKeys(state.r4, ['timerSec', 'spotPos']),   // spotPos = 找茬点坐标
     r5:         _pickKeys(state.r5, ['timerSec']),
   }, null, 1);

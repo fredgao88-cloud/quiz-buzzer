@@ -2998,14 +2998,18 @@ function playTurnCardFlip(round, onRevealed) {
 let _r3Locked = false;
 function r3Init() {
   if (!requireReady(3, { needDraw:false })) return;   // R3 抢答，不依赖出场顺序
-  if (state.roundRulesDismissed) delete state.roundRulesDismissed[3];  // 规则重新展示朗读
+  if (!state.roundRulesDismissed) state.roundRulesDismissed = {};
+  // 勾了「不读规则」就把闸门直接置成「已读完」：规则窗不弹、也不朗读。
+  // 加赛场景专用 —— 打平后再开一轮抢答，规则全场早听过了。
+  if (state.r3.skipRules) state.roundRulesDismissed[3] = true;
+  else                    delete state.roundRulesDismissed[3];   // 规则重新展示朗读
   r3CancelAuto();
   // 先 switchPanel 再 initR3：switchPanel 对非翻牌环节会把 displayMode 拨回
   // 'question'，必须让 initR3()（设 'turncard'）后落笔，否则单卡等待画面被盖掉。
   switchPanel(3); initR3(); render();
   // 系统读题：规则念完会自动出第一题（钩在 announceRulesIfNeeded 的关窗处）。
   // 但本环节若没配规则文案，那条链根本不会启动，这里直接排上第一题。
-  if (state.r3.autoRead && !getRoundRulesText(3)) r3ScheduleAutoNext(800);
+  if (state.r3.autoRead && (state.r3.skipRules || !getRoundRulesText(3))) r3ScheduleAutoNext(800);
 }
 function r3StartQ() {
   r3CancelAuto();      // 不论手动点还是自动触发，先清掉排队中的下一题，避免重入
@@ -4087,6 +4091,12 @@ function keymapSection() {
 }
 
 /** 擂台抢答专属：系统读题（整环节自动进行） */
+/** 不读规则（加赛用）。只影响是否朗读/弹窗，规则文案本身保留 */
+function r3SetSkipRules(on) {
+  state.r3.skipRules = !!on;
+  save(); renderRoundSettings(3);
+}
+
 function r3AutoReadSection() {
   const on = !!state.r3.autoRead;
   return `<div class="s-section"><h3>系统读题</h3>
@@ -4105,6 +4115,14 @@ function r3AutoReadSection() {
       对错判定、加减分、语音播报、出下一题全部由系统完成 —— 选手是口头作答，
       系统无从知道他报的是哪一项，这一步无法省略。<br>
       点【出题】【跳过此题】【重置抢答】会中断自动流程，之后可继续手动操作。
+    </div>
+    <label style="display:inline-flex;align-items:center;gap:6px;margin:10px 0 0;font-size:14px">
+      <input type="checkbox" ${state.r3.skipRules ? 'checked' : ''} onchange="r3SetSkipRules(this.checked)">
+      不读规则（加赛用）
+    </label>
+    <div style="font-size:12px;color:var(--muted);line-height:1.8;margin:4px 0 0">
+      勾上后点【开始本环节】不再弹规则窗、也不朗读，直接进入抢答。<br>
+      用于<b>加赛</b>：总分打平时再开一轮抢答定胜负，规则全场早已听过，没必要重念一遍。
     </div>
     <div class="row" style="margin-top:10px;align-items:flex-end">
       <label>发令音时长
