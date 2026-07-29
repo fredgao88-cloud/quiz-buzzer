@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-29.8';
+const APP_BUILD = '2026-07-29.13';
 
 // 本页面实例的唯一标识，随广播一起发出。
 // 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
@@ -1703,6 +1703,9 @@ function r3StartQuestion(qIdx, onArmed, intro = '') {
   state.r3.violatedTeams   = [];   // 新题，违规记录清零（同一队同一题只罚一次）
   state.r3.currentReadText = q.stem || '';
   state.showAnswerOnDisplay = false;
+  // 新题开始就收起记分牌：它是判分那一刻「亮出来」的东西，一直挂着就没有节奏点了，
+  // 而且底部那条会挤压题目区（见 display 的 body.scores-on 让位）。
+  state.showScoresOnDisplay = false;
   // 必须清掉上一环节残留的所选：大屏对「被选中且正好是正确答案」的选项会直接标绿，
   // 不看 showAnswerOnDisplay。残留值万一与本题答案相同，等于开局就泄题。
   state.pickedAnswer = null;
@@ -1798,9 +1801,10 @@ function r3TryBuzz(teamId, onViolationDone) {
   state.r3.selectedMember = 0;
   state.r3.buzzPulse      = (state.r3.buzzPulse || 0) + 1;
   state.r3.lastBuzzTeam   = teamId;
-  // 抢答成功改在记分牌上体现（大屏不再往题目上盖横幅，免得挡住抢到的队看题），
-  // 所以这里必须把记分牌亮出来，否则「谁抢到了」全场没有任何提示
-  state.showScoresOnDisplay = true;
+  // 「谁抢到了」由题目上方那条提示条显示（不遮挡题目），记分牌【此刻不弹】——
+  // 留到判分那一刻再亮出来，配合 ±N 飘字才有「加分了」的节奏点。
+  // 抢答就弹、一直挂着的话，判分时它早在那儿了，全场根本感觉不到分数变化。
+  state.showScoresOnDisplay = false;
   // 抢答窗口计时结束，重启 15 秒答题倒计时（见 4.3）
   startTimer(state.r3.timerSec * 1000, 3);
 
@@ -2100,6 +2104,7 @@ function r5StartTheme(themeIdx) {
   state.r5.usedAnswers     = [];
   state.r5.isTiebreak      = false;
   state.r5.turnPulse       = (state.r5.turnPulse || 0) + 1;
+  startTimer(state.r5.timerSec * 1000, 5);   // 新令题第一位，表从头走
   save();
 }
 
@@ -2123,6 +2128,7 @@ function r5StartTiebreak(themeIdx, rank = 1) {
   state.r5.usedAnswers     = [];
   state.r5.isTiebreak      = true;
   state.r5.turnPulse       = (state.r5.turnPulse || 0) + 1;
+  startTimer(state.r5.timerSec * 1000, 5);
   state.showScoresOnDisplay = false;
   save();
   return true;
@@ -2197,13 +2203,13 @@ function r5ValidAnswer(teamId, answer, opts = {}) {
     correct: true, delta: gained, reason: 'flower_valid',
     answer, ts: Date.now(),
   };
-  // skipAnnounce：自己播，播完才推进轮次。否则 _r5NextTurn 触发的
-  // 「请某队作答」会立刻把「某队有效得一分」掐断（speak 会打断前一句）
+  // skipAnnounce：播报交给控制台，和「请下一队作答」拼成一条队列顺序播
+  // （见 index.html r5SpeakResultAndTurn）。
+  // ⚠️ 轮次在这里【立刻】推进，不挂在播报回调上：语音一旦被打断，回调会被丢弃
+  //（过期回调不许改状态，这是刻意的），挂上去就会出现「判了分但轮次不动」的死局。
   logEvent(event, true);
   state.showScoresOnDisplay = true;   // 每答对一条就及时把记分牌亮出来
-  const after = () => _r5NextTurn();
-  if (window.IS_CONTROL) announceScore(event, after);
-  else after();
+  _r5NextTurn();
   return event;
 }
 
@@ -2223,13 +2229,9 @@ function r5Eliminate(teamId) {
   logEvent(event, true);
   state.showScoresOnDisplay = true;   // 出局也是一次战况变化，记分牌同步亮出来
   save();
-  // 「某队出局」要播完再推进，否则紧跟着的「请某队作答」会把它掐掉
-  const after = () => {
-    if (state.r5.activeTeams.length === 1) r5SetWinner(state.r5.activeTeams[0]);  // 只剩一队＝擂主
-    else _r5NextTurn();
-  };
-  if (window.IS_CONTROL) speak(`${team.name}出局`, { onend: after });
-  else after();
+  // 同 r5ValidAnswer：状态立刻推进，播报交给控制台拼队列
+  if (state.r5.activeTeams.length === 1) r5SetWinner(state.r5.activeTeams[0]);  // 只剩一队＝擂主
+  else _r5NextTurn();
   return event;
 }
 
@@ -2246,8 +2248,9 @@ function r5SetWinner(teamId) {
     correct: true, delta: gained, reason: 'flower_winner',
     ts: Date.now(),
   };
-  logEvent(event);
+  logEvent(event, true);   // 播报由控制台拼进队列，避免与前一句互相打断
   state.showScoresOnDisplay = true;
+  stopTimer();             // 本令题已决出擂主，停表，别让残表接着跑到下一令题
   save();
   return event;
 }
@@ -2266,10 +2269,13 @@ function _r5NextTurn() {
   }
   state.r5.currentTurnIdx = next;
   state.r5.turnPulse = (state.r5.turnPulse || 0) + 1;
+  // 轮到下一队 = 表立刻从头走。
+  // 曾经想「等『请某队作答』播完再开表」，好让播报时间不占作答时间 —— 结果是
+  // 开表挂在语音回调上，而语音被打断时回调会被丢弃（过期回调不许改状态），
+  // 一被打断表就永远不起。飞花令每一轮都要念一句队名，每队都被念，
+  // 那一秒多对所有队一视同仁，不值得为它引入一条会卡死的时序链。
+  startTimer(state.r5.timerSec * 1000, 5);
   save();
-  // 计时【不在这里起】：先由控制台报「请某队作答」，播完才起 ——
-  // 否则播报那两三秒算进 10 秒作答时间里，轮到谁谁吃亏。
-  // 见 index.html 的 r5AnnounceTurnIfNeeded()
 }
 
 // =====================================================

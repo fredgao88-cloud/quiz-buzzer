@@ -94,6 +94,7 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 #buzz-banner{display:none;padding:7px 22px;border-radius:999px;font-size:clamp(15px,1.7vw,24px);font-weight:800;text-align:center;letter-spacing:1px;margin-bottom:16px;white-space:nowrap}
 #buzz-banner.show-armed{display:inline-block;background:#052e16;border:2px solid #22c55e;color:#4ade80;box-shadow:0 0 20px #22c55e99;animation:buzz-tip-glow 1s ease-in-out infinite}
 /* 等待发令：这是【警示】（此时抢按要扣分），不能用和「开始抢答」一样的绿色 */
+#buzz-banner.show-locked{display:inline-block;border:2px solid #3b82f6;color:#93c5fd;background:#1e3a5f44}
 #buzz-banner.show-warn{display:inline-block;background:#451a03;border:2px solid #f59e0b;color:#fcd34d;box-shadow:0 0 20px #f59e0b99}
 #buzz-banner.show-violation{display:inline-block;background:#450a0a;border:2px solid #ef4444;color:#fca5a5;box-shadow:0 0 20px #ef444499;animation:shake .4s ease-out}
 @keyframes buzz-tip-glow{0%,100%{box-shadow:0 0 14px #22c55e66}50%{box-shadow:0 0 30px #22c55ecc}}
@@ -782,12 +783,23 @@ function updateBuzzBanner() {
       ? '听到「滴」声才可抢答 — 提前抢按扣分'
       : '请等待「开始抢答」口令 — 抢按扣分', 'show-warn');
   } else if (bs === 'locked' || bs === 'supplement') {
-    // 抢答成功【不再在题目上盖横幅】——那块浮层正好压住题干和选项，
-    // 抢到的队伍还得盯着题作答，被挡住最难受。改为在下方记分牌上高亮该队
-    // （见 updateScoresGrid 的 buzzed 分支），题目区保持干净。
+    // 抢答成功不盖在题目上（那块浮层正好压住题干和选项，抢到的队还得盯着题作答），
+    // 改用题目【上方】那条不遮挡的提示条报出是谁抢到，配该队颜色。
+    // 记分牌此刻不弹 —— 留到判分那一刻再亮，才有「加分了」的节奏点。
     if (state.r3.buzzPulse !== _lastBuzzPulse) _lastBuzzPulse = state.r3.buzzPulse;
     if (_buzzerHideTimer) { clearTimeout(_buzzerHideTimer); _buzzerHideTimer = null; }
-    hideBuzzBanner();
+    const bt = state.teams.find(t => t.id === state.r3.buzzedTeam);
+    if (bt) {
+      showBuzzBanner(`${bt.name} 抢答成功 · 请作答`, 'show-locked');
+      const b = document.getElementById('buzz-banner');
+      const c = tColor(bt);
+      b.style.color = c;
+      b.style.borderColor = c;
+      b.style.background = c + '22';
+      b.style.boxShadow = `0 0 20px ${c}99`;
+    } else {
+      hideBuzzBanner();
+    }
   } else {
     hideBuzzBanner();
   }
@@ -801,6 +813,8 @@ function showBuzzBanner(text, cls) {
 function hideBuzzBanner() {
   const b = document.getElementById('buzz-banner');
   b.className = ''; b.textContent = '';
+  // 清掉按队色写上去的内联样式，否则下一题的提示条会残留上一队的颜色
+  b.style.color = b.style.borderColor = b.style.background = b.style.boxShadow = '';
 }
 
 // ── 分数栏 ───────────────────────────────────────

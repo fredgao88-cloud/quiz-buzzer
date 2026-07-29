@@ -2943,7 +2943,7 @@ function r3ScheduleAutoNext(delay = 2000) {
   }, delay);
 }
 /** 本题收尾统一入口：先挂兜底，播报 onend 再用短延时顶掉它 */
-function r3AutoAfterEnd() { r3ScheduleAutoNext(9000); }
+function r3AutoAfterEnd() { r3ScheduleAutoNext(12000); }
 function r3SetAutoRead(on) {
   state.r3.autoRead = !!on;
   if (!on) r3CancelAuto();
@@ -2982,8 +2982,10 @@ function doR3(correct) {
   if (correct) {
     // 答对＝本题结束。手动模式等主持人点【出题】；系统读题模式自动接下一题
     r3AutoAfterEnd();
-    speak(`回答正确，${team.name}加${scoreToSpeech(Math.abs(ev.delta))}，总分${scoreToSpeech(total)}`,
-          { onend: () => r3ScheduleAutoNext() });
+    // 队名放句首：现场嘈杂，先点名才抓得住是谁；「回答正确」在前的话，
+    // 全场听到一半还不知道说的是哪个队。
+    speak(`${team.name}，回答正确，加${scoreToSpeech(Math.abs(ev.delta))}，总分${scoreToSpeech(total)}`,
+          { onend: () => r3ScheduleAutoNext(3500) });   // 多停一会儿，让全场看清记分牌
     return;
   }
   // 答错：扣分 + 没收本题抢答资格，播完自动继续抢答（与抢跑违规同一套话术结构）
@@ -3160,61 +3162,41 @@ function r5Init() {
 }
 // 「出题」= 揭晓令题：先翻单卡动画，动画播完才真正切令题、报出题目、起计时。
 function r5RevealTheme(i) {
-  // 挡板必须在 playTurnCardFlip【之前】立起来：它翻完牌是先 save() 再调回调，
-  // 那次 save 会把 displayMode 切成 'question' 并触发监听 —— 挡板若放在回调里，
-  // 「请某队作答」就会抢在「本题令题」前面念出去。
-  _r5ThemeIntro = true;
   playTurnCardFlip(5, () => {
-    r5StartTheme(i);
-    r5SpeakTheme();
+    r5StartTheme(i);     // 内部会 save，可能触发轮次播报的监听
+    r5SpeakTheme();      // 它会立刻把本轮标记成已播报，令题不会被抢在前面
   });
 }
 
-// ── R5 播报：令题 → 轮到谁 → 起计时 ──────────────────
-// 原先揭晓令题和轮转都不出声，选手只能靠主持人自己喊，轮到谁全场经常是懵的。
-// 这里对齐①②④的做法：先报内容，报完才起计时（播报时间不算进作答时间）。
-let _r5ThemeIntro   = false;   // 正在念令题，此时先不报轮次
-let _r5LastTurnPulse = null;   // 已报过的轮次序号，防重复播报
+// ── R5 播报 ──────────────────────────────────────
+// 只负责发声，不改任何状态、也不管计时 —— 轮次与开表都在 shared.js 里同步完成。
+// 早先把「推进轮次」和「开表」挂在语音回调上，结果语音一被打断（判分、换令题都会打断）
+// 回调就被丢弃，出现「判了分但轮次不动」「表永远不起」的死局。教训：
+// 状态变更必须同步执行，语音只是播出来给人听的。
+//
+// 每次判定后把「结果」和「请下一队作答」拼成【一条队列】播 —— 分两次播的话，
+// 后一句会把前一句掐掉（speak/speakQueue 会打断当前播报）。
 
-/** 揭晓令题：念「本题令题，XXX」，念完接着报第一位 */
+/** 揭晓令题：「本题令题，XXX」+「请某队作答」连播 */
 function r5SpeakTheme() {
   const themes = state.questions.filter(q => q.round === 5 && q.type === 'theme');
-  const t = themes[state.r5.currentThemeIdx];
-  _r5LastTurnPulse = null;                 // 新令题，第一位要重新报
-  const done = () => { _r5ThemeIntro = false; r5AnnounceTurnIfNeeded(); };
-  if (t) speak(`本题令题，${t.stem}`, { onend: done });
-  else   done();
+  const t      = themes[state.r5.currentThemeIdx];
+  const order  = state.r5.teamOrder || [];
+  const team   = getTeam(order[state.r5.currentTurnIdx]);
+  const segs = [t ? `本题令题，${t.stem}` : '', team ? `请${team.name}作答` : ''].filter(Boolean);
+  if (segs.length) speakQueue(segs);
 }
 
-/**
- * 报「请某队作答」，播完才起计时。做成响应式（同①②④）：
- * 不论是判有效、判出局还是评委裁定推进的轮次，只要 turnPulse 变了就报一次。
- * 用 turnPulse 而不是队号去重 —— 同一队在一轮里会被轮到多次，比队号会漏报。
- */
-function r5AnnounceTurnIfNeeded() {
-  if (!window.IS_CONTROL || state.paused) return;
-  if (state.currentRound !== 5) { _r5LastTurnPulse = null; return; }
-  if (_r5ThemeIntro) return;                          // 令题还在念
-  if (state.displayMode === 'turncard') return;       // 令题还没揭晓
-  const order  = state.r5.teamOrder || [];
+/** 一次判定之后：「结果」+「请下一队作答」连播 */
+function r5SpeakResultAndTurn(resultText) {
+  const order  = state.r5.teamOrder   || [];
   const active = state.r5.activeTeams || [];
   const tid    = order[state.r5.currentTurnIdx];
-  if (tid == null || !active.includes(tid)) return;
-  if (active.length <= 1) return;                     // 已剩擂主，不必再催
-  const pulse = state.r5.turnPulse || 0;
-  if (_r5LastTurnPulse === pulse) return;
-  _r5LastTurnPulse = pulse;
-  const team = getTeam(tid);
-  if (!team) return;
-  // ⚠️ cdSpoken.clear() 必须在 startTimer【之前】：startTimer 内部会 save()，
-  // 那一步同步跑完 render→renderTimer，10 秒表刚起就命中「念 10」并记进 cdSpoken；
-  // 清在后面正好把刚记下的抹掉，下一帧又念一次「10」。全项目已统一成这个顺序。
-  speak(`请${team.name}作答`, { onend: () => {
-    if (state.currentRound !== 5) return;             // 期间已切走环节
-    cdSpoken.clear();
-    startTimer(state.r5.timerSec * 1000, 5);
-  }});
+  const next   = (active.length > 1 && active.includes(tid)) ? getTeam(tid) : null;
+  const segs = [resultText, next ? `请${next.name}作答` : ''].filter(Boolean);
+  if (segs.length) speakQueue(segs);
 }
+
 function r5SetTheme(i) { r5RevealTheme(i); }
 function r5NextTheme() {
   const themes = state.questions.filter(q=>q.round===5&&q.type==='theme');
@@ -3251,15 +3233,27 @@ function r5DoValid(teamId) {
       r5Eliminate(teamId);
     } else {
       r5ValidAnswer(teamId, text, { force: true });   // 评委裁定：强制通过
-      // 计时由「请某队作答」播完后统一起，见 r5AnnounceTurnIfNeeded
+      // 轮次与计时已在 r5Eliminate/_r5NextTurn 里同步完成
     }
     render();
     return;
   }
 
-  render();   // 计时由「请某队作答」播完后统一起
+  r5SpeakResultAndTurn(`${r.teamName}，有效，得到${scoreToSpeech(Math.abs(r.delta))}`);
+  render();
 }
-function r5DoElim(teamId) { r5Eliminate(teamId); render(); }
+function r5DoElim(teamId) {
+  const t = getTeam(teamId);
+  const ev = r5Eliminate(teamId);
+  if (!ev) return;
+  // 若这一下正好定出擂主，把擂主那句也接在后面一起播
+  const w = (state.r5.themeWinners || []).find(x => x.themeIdx === state.r5.currentThemeIdx);
+  const winnerTeam = w ? getTeam(w.teamId) : null;
+  const sc = getScoreCfg('r5');
+  r5SpeakResultAndTurn(`${t?.name || ''}出局`
+    + (winnerTeam ? `。${winnerTeam.name}成为本题擂主，额外得到${scoreToSpeech(Math.abs(sc.winner))}` : ''));
+  render();
+}
 /**
  * 点参考答案列表里的一条＝判「当前该轮到的队伍」答对该条。
  * 大屏上已被别的队用过的选项会被禁用，正常操作不会点到重复项；
@@ -3274,7 +3268,8 @@ function r5PickAnswer(answer) {
   const r = r5ValidAnswer(curId, answer);
   if (!r) return;
   if (r.duplicate) { alert('这条参考答案刚被占用了，请换一条或点【出局】。'); render(); return; }
-  render();   // 计时由「请某队作答」播完后统一起
+  r5SpeakResultAndTurn(`${r.teamName}，有效，得到${scoreToSpeech(Math.abs(r.delta))}`);
+  render();
 }
 function r5ManualWinner() {
   const active = state.r5.activeTeams || [];
@@ -4398,13 +4393,11 @@ onChange(announceRulesIfNeeded);   // 进入翻牌选题时自动朗读环节规
 onChange(r1AnnounceFlipPromptIfNeeded);   // 个人必答：等待翻牌时报「请某队队员某某翻牌」
 onChange(r2AnnounceFlipPromptIfNeeded);   // 团队共答：等待翻牌时报「请某队翻牌」（不带队员名）
 onChange(r4AnnounceFlipPromptIfNeeded);   // 识图找茬：等待翻牌时报「请某队开始选题」
-onChange(r5AnnounceTurnIfNeeded);         // 服务飞花令：轮次变化时报「请某队作答」
 render();
 announceRulesIfNeeded();           // 覆盖「刷新后已处于翻牌选题」的情形
 r1AnnounceFlipPromptIfNeeded();    // 同上：刷新后若正等着翻牌，补报一次
 r2AnnounceFlipPromptIfNeeded();
 r4AnnounceFlipPromptIfNeeded();
-r5AnnounceTurnIfNeeded();
 
 // ── 题库自动加载 ─────────────────────────────────
 // 题库为空时自动拉取同目录的 questions.json，省去每次手动导入。
