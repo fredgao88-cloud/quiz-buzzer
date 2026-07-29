@@ -610,7 +610,15 @@ function updatePrepCover() {
 
 function updateHeader() {
   const NAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令','观众答题'];
-  document.getElementById('round-tag').textContent = NAMES[state.currentRound] || '赛前准备';
+  const tag = document.getElementById('round-tag');
+  tag.textContent = NAMES[state.currentRound] || '赛前准备';
+
+  // ⑥ 观众答题：环节名与计时圆环一并收起。
+  // 圆环在本环节永远是「--」（不计时），环节名对台下观众也没有信息量 ——
+  // 两个都留着只是把版面挤窄、把题目往下压。
+  const isR6 = state.currentRound === 6;
+  tag.style.display = isR6 ? 'none' : '';
+  document.getElementById('timer-ring-wrap').style.display = isR6 ? 'none' : '';
   const li = document.getElementById('logo-img');
   if (state.logo) { li.src = state.logo; li.style.display = ''; } else li.style.display = 'none';
   document.getElementById('brand-text').textContent = state.brandName || '荣资商厦服务技能大赛';
