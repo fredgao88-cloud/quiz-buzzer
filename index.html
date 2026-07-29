@@ -3616,8 +3616,8 @@ function awToggleReveal() {
   const list = awardWinners(aw);
   if (!state.awards.revealed && !list.length) {
     return alert('「' + aw.name + '」还没有获奖名单。\n\n'
-      + (aw.type === 'auto' ? '名次奖取自比赛总分排名，请先完成比赛计分。'
-                            : '请在下方勾选获奖者。'));
+      + (awardIsAuto(aw) ? '本奖项由系统自动统计，请先完成对应环节的判分。'
+                         : '请在下方勾选获奖者。'));
   }
   state.awards.revealed = !state.awards.revealed;
   if (state.currentRound !== 7) initAwards(); else save();
@@ -3643,6 +3643,7 @@ function awAddText() {
   render();
 }
 function awRemoveAt(i) { removeAwardWinnerAt(currentAward(), i); render(); }
+function awToggleManual() { toggleAwardManual(currentAward()); render(); }
 
 function renderP7() {
   const aw   = currentAward();
@@ -3655,7 +3656,7 @@ function renderP7() {
   document.getElementById('aw-tabs').innerHTML = state.awards.list.map((a, i) => {
     const n    = awardWinners(a).length;
     const cur  = i === state.awards.currentIdx;
-    const col  = a.type === 'auto' ? 'var(--accent)' : (n >= a.count ? 'var(--green)' : 'var(--yellow)');
+    const col  = awardIsAuto(a) ? 'var(--accent)' : (n >= a.count ? 'var(--green)' : 'var(--yellow)');
     return '<button class="' + (cur ? 'btn-primary' : 'btn-ghost') + ' btn-sm"'
       + ' style="' + (cur ? '' : 'border-color:' + col + ';color:' + col) + '"'
       + ' onclick="awSetAward(' + i + ')">' + escapeHtml(a.name) + ' ' + n + '/' + a.count + '</button>';
@@ -3677,6 +3678,15 @@ function renderP7() {
         + tied.map(t => escapeHtml(t.name)).join('、') + '），名次是任意排的。'
         + '请先加赛决出后再颁 —— ⑤服务飞花令 →【并列检测 / 加赛】，或用 ③擂台抢答 加赛。</div>'
       : '';
+  } else if (aw.type === 'auto_member' && !aw.manual) {
+    const tied = memberAwardTie(aw);
+    tieBox.innerHTML = tied.length
+      ? '<div style="padding:8px 10px;border-radius:8px;background:#78350f33;'
+        + 'border:1px solid var(--yellow);color:#fcd34d;font-size:13px">'
+        + '⚠ 第 ' + aw.count + ' 名的位置上有 ' + tied.length + ' 人同为 ' + tied[0].score + ' 分（'
+        + tied.map(r => escapeHtml(r.name) + '·' + escapeHtml(r.teamName)).join('、') + '），'
+        + '取前 ' + aw.count + ' 名的话排序是任意的。请点【改为手工指定】自行定夺。</div>'
+      : '';
   } else tieBox.innerHTML = '';
 
   document.getElementById('aw-count').textContent = list.length + ' / ' + aw.count;
@@ -3689,13 +3699,13 @@ function renderP7() {
         return '<span class="answer-btn" style="border-color:' + c + ';cursor:default">'
           + '<b style="color:' + c + '">' + escapeHtml(w.name) + '</b>'
           + (w.sub ? '<span style="color:var(--muted);font-size:.85em"> · ' + escapeHtml(w.sub) + '</span>' : '')
-          + (aw.type === 'auto' ? ''
+          + (awardIsAuto(aw) ? ''
              : '<span onclick="awRemoveAt(' + i + ')" title="移除"'
                + ' style="cursor:pointer;color:var(--red);margin-left:8px;font-weight:900">×</span>')
           + '</span>';
       }).join('') + '</div>'
     : '<span style="color:var(--muted);font-size:13px">'
-      + (aw.type === 'auto' ? '（按比赛总分自动产生）' : '（还没选，在下面勾选）') + '</span>';
+      + (awardIsAuto(aw) ? '（由系统自动产生）' : '（还没选，在下面勾选）') + '</span>';
 
   // 选人区
   const picker = document.getElementById('aw-picker');
@@ -3709,8 +3719,30 @@ function renderP7() {
             + (i + 1) + '. <b style="color:' + c + '">' + escapeHtml(r.team.name) + '</b>'
             + '<span style="color:var(--muted);font-size:.85em"> ' + r.total + ' 分</span></span>';
         }).join('') + '</div>';
-  } else if (aw.type === 'member') {
-    picker.innerHTML = '<div class="card-title">点选获奖队员（可跨队多选）</div>'
+  } else if (aw.type === 'auto_member' && !aw.manual) {
+    const rows = memberRoundRanking(aw.round || 5);
+    const rname = ['','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令'][aw.round] || ('第' + aw.round + '环节');
+    picker.innerHTML = '<div class="card-title">' + rname + ' 个人得分排行'
+      + '<button class="btn-ghost btn-sm" style="margin-left:10px" onclick="awToggleManual()"'
+      + ' title="并列或需要人为取舍时改为手工指定">改为手工指定</button></div>'
+      + (rows.length
+         ? '<div class="row">' + rows.map((r, i) => {
+             const t2 = getTeam(r.teamId), c = t2 ? tColor(t2) : 'var(--muted)';
+             const on = i < (aw.count || 1);
+             return '<span class="answer-btn" style="border-color:' + c + ';cursor:default;'
+               + (on ? 'box-shadow:0 0 0 2px ' + c : 'opacity:.5') + '">'
+               + (i + 1) + '. <b style="color:' + c + '">' + escapeHtml(r.name) + '</b>'
+               + '<span style="color:var(--muted);font-size:.85em"> ' + escapeHtml(r.teamName)
+               + ' · ' + r.score + ' 分</span></span>';
+           }).join('') + '</div>'
+         : '<span style="color:var(--muted);font-size:13px">'
+           + rname + '还没有个人判分记录，跑完该环节才有排名。</span>');
+  } else if (aw.type === 'member' || aw.type === 'auto_member') {
+    picker.innerHTML = '<div class="card-title">点选获奖队员（可跨队多选）'
+      + (aw.type === 'auto_member'
+         ? '<button class="btn-ghost btn-sm" style="margin-left:10px" onclick="awToggleManual()"'
+           + ' title="改回按个人得分自动统计">恢复自动统计</button>' : '')
+      + '</div>'
       + state.teams.map(t => {
           const c = tColor(t);
           return '<div class="row" style="margin-bottom:6px;align-items:center">'

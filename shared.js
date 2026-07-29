@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-30.1';
+const APP_BUILD = '2026-07-30.4';
 
 // 本页面实例的唯一标识，随广播一起发出。
 // 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
@@ -275,7 +275,10 @@ function defaultState() {
         { key:'p_win',   name:'个人服务优胜奖', type:'member', count:12, winners:[] },
         { key:'p_know',  name:'服务知识之星奖', type:'member', count:3,  winners:[] },
         { key:'p_skill', name:'服务竞技之星',   type:'member', count:3,  winners:[] },
-        { key:'p_flower',name:'服务飞花令达人', type:'member', count:2,  winners:[] },
+        // 飞花令达人由系统统计：每条有效答案都记了作答队员，直接按个人得分排名。
+        // manual:true 时退回手工指定（并列在关键位置时需要人来定）
+        { key:'p_flower',name:'服务飞花令达人', type:'auto_member', round:5, count:2,
+          manual:false, winners:[] },
         { key:'t_org',   name:'组织奖',         type:'team',   count:2,  winners:[] },
         { key:'r_3rd',   name:'三等奖',         type:'auto',   count:1,  rank:3, winners:[] },
         { key:'r_2nd',   name:'二等奖',         type:'auto',   count:1,  rank:2, winners:[] },
@@ -544,6 +547,29 @@ function _migrate() {
   // ⑥ 观众答题曾经有过规则文案（v2026-07-29.27~.28）。后来定为穿插互动，
   // 不念规则、设置里也不再有这一页，残留的文案只会跟着配置导出到处跑。
   if (state.roundRules && state.roundRules[6] !== undefined) delete state.roundRules[6];
+
+  // 奖项定义随版本升级。deepMerge 是「默认值打底、存档覆盖」且数组按下标合并，
+  // 所以光改 defaultState 不会让老存档里的奖项跟着变 —— 飞花令达人从
+  // 手工勾选(member)改成自动统计(auto_member)时就踩到了：升级后仍按旧定义走。
+  // 这里按 key 对齐：type/round/rank 属于代码定义的行为，一律用最新的；
+  // name/count/winners 属于用户侧数据，保留不动。
+  const defList = defaultState().awards.list;
+  const cur     = state.awards?.list;
+  if (Array.isArray(cur)) {
+    const byKey = new Map(defList.map(a => [a.key, a]));
+    cur.forEach(a => {
+      const d = byKey.get(a.key);
+      if (!d) return;
+      a.type = d.type;
+      if (d.round != null) a.round = d.round;
+      if (d.rank  != null) a.rank  = d.rank;
+      if (d.type === 'auto_member' && typeof a.manual !== 'boolean') a.manual = false;
+    });
+    // 新增的奖项补进来（老存档里没有的，按默认顺序插入）
+    defList.forEach((d, i) => {
+      if (!cur.some(a => a.key === d.key)) cur.splice(i, 0, JSON.parse(JSON.stringify(d)));
+    });
+  }
 }
 
 function load() {
@@ -2452,6 +2478,48 @@ function r6RemainingCount() {
 // ⑦ 颁奖
 // =====================================================
 
+/**
+ * 按【个人在某环节的得分】排名，用于自动评出个人奖（如飞花令达人）。
+ *
+ * 数据来自 state.history：每条判分事件都带 teamId + memberIdx，所以能精确
+ * 落到人头上。只统计 memberIdx 有值的事件 —— 队伍级加分（如飞花令擂主 +3）
+ * 没有作答人，算进个人分等于凭空给某人加分。
+ *
+ * 返回 [{ teamId, memberIdx, name, teamName, score }]，按得分降序；
+ * 没有任何记录的队员不参与（避免 0 分的人挤进获奖名单）。
+ */
+function memberRoundRanking(round) {
+  const acc = new Map();                       // key: teamId + '#' + memberIdx
+  for (const e of state.history || []) {
+    if (e.round !== round || e.memberIdx == null) continue;
+    const k = e.teamId + '#' + e.memberIdx;
+    acc.set(k, (acc.get(k) || 0) + (e.delta || 0));
+  }
+  const rows = [];
+  for (const [k, score] of acc) {
+    const [tid, mi] = k.split('#').map(Number);
+    const t = getTeam(tid);
+    const nm = t && (t.members || [])[mi];
+    if (!t || !nm) continue;                   // 队员被删/改名后对不上，跳过
+    rows.push({ teamId: tid, memberIdx: mi, name: nm, teamName: t.name, score });
+  }
+  return rows.sort((a, b) => b.score - a.score);
+}
+
+/**
+ * 自动个人奖在名额边界上是否并列 —— 比如取前 2 名，而第 2、3 名同分。
+ * 并列时排序是任意的，直接颁就可能颁错人，必须让主持人决定。
+ * 返回并列的那一组（长度 < 2 表示边界干净）。
+ */
+function memberAwardTie(award) {
+  const rows = memberRoundRanking(award.round || 5);
+  const n = award.count || 1;
+  if (rows.length <= n) return [];             // 人数没超过名额，无需取舍
+  const cutoff = rows[n - 1].score;
+  const tied = rows.filter(r => r.score === cutoff);
+  return tied.length >= 2 ? tied : [];
+}
+
 /** 当前奖项（越界返回 null） */
 function currentAward() {
   return state.awards.list[state.awards.currentIdx] || null;
@@ -2485,11 +2553,19 @@ function awardWinners(award) {
     const row = ranking[(award.rank || 1) - 1];
     return row ? [{ name: row.team.name, sub: `总分 ${row.total}`, teamId: row.team.id }] : [];
   }
+  // 自动个人奖（飞花令达人）：按个人在该环节的得分取前 N 名。
+  // 切了 manual 就退回下面的手工名单逻辑。
+  if (award.type === 'auto_member' && !award.manual) {
+    return memberRoundRanking(award.round || 5)
+      .slice(0, award.count || 1)
+      .map(r => ({ name: r.name, sub: `${r.teamName} · ${r.score} 分`, teamId: r.teamId }));
+  }
+
   return (award.winners || []).map(w => {
     if (w.text) return { name: w.text, sub: '', teamId: null };
     const t = getTeam(w.teamId);
     if (!t) return null;
-    if (award.type === 'member') {
+    if (award.type === 'member' || award.type === 'auto_member') {
       const nm = (t.members || [])[w.memberIdx];
       return nm ? { name: nm, sub: t.name, teamId: t.id } : null;
     }
@@ -2499,8 +2575,32 @@ function awardWinners(award) {
 
 /** 该获奖者是否已被选中（member 比对 teamId+memberIdx，team 比对 teamId） */
 function awardHas(award, teamId, memberIdx) {
+  const byMember = award.type === 'member' || award.type === 'auto_member';
   return (award.winners || []).some(w =>
-    w.teamId === teamId && (award.type !== 'member' || w.memberIdx === memberIdx));
+    w.teamId === teamId && (!byMember || w.memberIdx === memberIdx));
+}
+
+/** 该奖项此刻是否由系统自动产生（auto_member 可被 manual 关掉） */
+function awardIsAuto(award) {
+  if (!award) return false;
+  if (award.type === 'auto') return true;
+  return award.type === 'auto_member' && !award.manual;
+}
+
+/** 自动个人奖：切换「系统统计 / 手工指定」。切到手动时把当前自动结果填进去当草稿 */
+function toggleAwardManual(award) {
+  if (!award || award.type !== 'auto_member') return;
+  award.manual = !award.manual;
+  // 切到手动时【总是】以当前自动结果为底稿，而不是沿用 winners 里的旧内容。
+  // 操作员切手动的动机就是「照系统排的改一两个」，给他一份上一场残留的名单
+  // 只会让人以为统计错了。代价是「手动→自动→手动」会丢掉之前的微调，
+  // 但那比拿着过期名单上台强。
+  if (award.manual) {
+    award.winners = memberRoundRanking(award.round || 5)
+      .slice(0, award.count || 1)
+      .map(r => ({ teamId: r.teamId, memberIdx: r.memberIdx }));
+  }
+  save();
 }
 
 /**
@@ -2508,10 +2608,15 @@ function awardHas(award, teamId, memberIdx) {
  * 不静默丢弃 —— 颁奖名单错一个人是现场事故。
  */
 function toggleAwardWinner(award, teamId, memberIdx) {
-  if (!award || award.type === 'auto') return '本奖项由比赛结果自动产生，不能手工改。';
+  if (!award) return '没有当前奖项。';
+  if (award.type === 'auto') return '本奖项由比赛结果自动产生，不能手工改。';
+  if (award.type === 'auto_member' && !award.manual) {
+    return '本奖项由系统按个人得分自动统计。要手工指定，请先点【改为手工指定】。';
+  }
   award.winners = award.winners || [];
+  const byMember = award.type === 'member' || award.type === 'auto_member';
   const i = award.winners.findIndex(w =>
-    w.teamId === teamId && (award.type !== 'member' || w.memberIdx === memberIdx));
+    w.teamId === teamId && (!byMember || w.memberIdx === memberIdx));
   if (i >= 0) { award.winners.splice(i, 1); save(); return null; }
   if (award.winners.length >= award.count) {
     return `「${award.name}」限 ${award.count} 位，已选满。先取消一位再选。`;
@@ -2525,7 +2630,7 @@ function toggleAwardWinner(award, teamId, memberIdx) {
 function addAwardText(award, text) {
   const v = String(text || '').trim();
   if (!v) return '名称不能为空。';
-  if (award.type === 'auto')   return '本奖项由比赛结果自动产生，不能手工改。';
+  if (awardIsAuto(award)) return '本奖项由系统自动产生，不能手工改。';
   award.winners = award.winners || [];
   if (award.winners.length >= award.count) {
     return `「${award.name}」限 ${award.count} 位，已选满。`;
@@ -2536,7 +2641,7 @@ function addAwardText(award, text) {
 }
 
 function removeAwardWinnerAt(award, i) {
-  if (!award || award.type === 'auto') return;
+  if (!award || awardIsAuto(award)) return;
   (award.winners || []).splice(i, 1);
   save();
 }
@@ -2688,6 +2793,17 @@ function resetContest() {
 
   state.r6.currentQIdx     = null; state.r6.usedQIds         = [];
   state.r6.judged          = null;
+
+  // 颁奖：清空获奖名单，回到第一个奖项、未公布。
+  // 自动统计的奖项（名次奖、飞花令达人）本来就跟着分数走，分数清零它们自然归零；
+  // 这里把 manual 也拨回自动 —— 上一场为处理并列切成手动的选择不该带到下一场。
+  // 不动的：奖项设置（名称/名额）与颁奖背景图，那些属于赛前配置。
+  state.awards.currentIdx = 0;
+  state.awards.revealed   = false;
+  (state.awards.list || []).forEach(a => {
+    a.winners = [];
+    if (a.type === 'auto_member') a.manual = false;
+  });
 
   // 赛程与大屏
   state.currentRound        = 0;
