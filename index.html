@@ -74,12 +74,20 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
    只弹 alert 不够 —— 弹窗一闪而过，人只看到「莫名其妙跳回赛前准备」。 */
 @keyframes need-attention{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,0)}30%{box-shadow:0 0 0 3px rgba(245,158,11,.85)}}
 .need-attention{animation:need-attention 1s ease-in-out 3}
-.member-btn{padding:4px 8px;border-radius:5px;font-size:12px;background:var(--surface);border:1px solid var(--border);color:var(--text);cursor:pointer;transition:all .15s}
-.member-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+/* 队员按钮：四个环节统一大号。原先只有团队共答用大号（16px），其余是 12px，
+   现场光线暗、操作员站着看，小字点起来费劲还容易点错人。 */
+.member-btn{padding:10px 18px;border-radius:8px;font-size:16px;font-weight:700;background:var(--surface);border:1px solid var(--border);color:var(--text);cursor:pointer;transition:all .15s}
+.member-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:800;box-shadow:0 0 0 2px var(--accent),0 3px 12px #3b82f655}
 .member-btn:hover:not(.active){background:var(--border)}
+/* 飞花令的参考答案按钮：与队员按钮同一档字号。操作员要一边听选手说、
+   一边在几十条里找对应那条，小字根本来不及扫。 */
+.answer-btn{padding:9px 16px;margin:0 6px 6px 0;border-radius:8px;font-size:16px;font-weight:700;
+  background:var(--surface);border:1px solid var(--border);color:var(--text);cursor:pointer;transition:all .15s}
+.answer-btn:hover:not([disabled]){background:var(--accent);border-color:var(--accent);color:#fff}
+.answer-btn[disabled]{cursor:not-allowed}
 /* 团队共答的选队员按钮：与「提交多选答案」同字号，提交前的必经动作不能不起眼 */
-.member-btn-lg{padding:12px 20px;border-radius:8px;font-size:16px;font-weight:800;letter-spacing:1px}
-.member-btn-lg.active{box-shadow:0 0 0 2px var(--accent),0 3px 12px #3b82f655}
+/* 大号已并入 .member-btn，这个类只多给一点字距，留着是为了不动 R2 的模板 */
+.member-btn-lg{letter-spacing:1px}
 
 /* question box */
 .q-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px}
@@ -91,7 +99,9 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
 .q-option.selected{background:#1e3a5f;border-color:var(--accent);color:#93c5fd}
 .q-option[onclick]{cursor:pointer;transition:background .15s,border-color .15s}
 .q-option[onclick]:hover{background:var(--surface2);border-color:var(--muted)}
-.q-answer{margin-top:8px;padding:8px 12px;border-radius:6px;background:#1e3a5f;border:1px solid var(--accent);font-size:13px;color:#93c5fd}
+/* 后台的正确答案：与队员按钮同字号（16px）。操作员要一眼扫到答案再判分，
+   原先 13px 混在题干里，现场经常要凑近看。 */
+.q-answer{margin-top:10px;padding:10px 14px;border-radius:8px;background:#1e3a5f;border:2px solid var(--accent);font-size:16px;font-weight:800;letter-spacing:.5px;color:#bfdbfe}
 
 /* timer bar */
 #timer-bar{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0}
@@ -481,9 +491,9 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     <div id="r4-team-bar" class="q-box">
       <div id="r4-team-name" style="font-size:15px;font-weight:700"></div>
       <div id="r4-image-key" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
-      <!-- 代表本队指认的队员：可选可不选，选了只记进判分流水，不影响得分 -->
+      <!-- 代表本队指认的队员：必选，记进判分流水 -->
       <div id="r4-member-hint" style="font-size:12px;color:var(--muted);margin-top:6px">
-        代表本队指认的队员（可不选，再点一次取消）：
+        代表本队指认的队员：
       </div>
       <div id="r4-member-btns" class="row" style="margin-top:4px"></div>
     </div>
@@ -1488,8 +1498,8 @@ function renderP4() {
       ).join('')
     : '';
   document.getElementById('r4-member-hint').innerHTML = mIdx != null
-    ? `代表本队指认的队员：<b style="color:${c}">${escapeHtml(team.members[mIdx] || '')}</b>（再点一次取消，不影响得分）`
-    : '代表本队指认的队员（可不选，不影响得分）：';
+    ? `代表本队指认的队员：<b style="color:${c}">${escapeHtml(team.members[mIdx] || '')}</b>`
+    : '<span style="color:var(--red);font-weight:700">← 请先选择代表本队指认的队员，再结算得分</span>';
   document.getElementById('r4-progress').textContent = `${tIdx+1}/${orderedTeams().length} 队`;
 
   // 翻牌
@@ -1567,15 +1577,15 @@ function renderP5() {
   const poolBox = document.getElementById('r5-pool');
   if (pool.length) {
     poolBox.innerHTML =
-      `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">参考答案（点击＝判当前队答对；说的内容不在下面＝算错，点【出局】）</div>` +
+      `<div style="font-size:13px;color:var(--muted);margin-bottom:6px">参考答案（点击＝判当前队答对；说的内容不在下面＝算错，点【出局】）</div>` +
       `<div class="row">` + pool.map(a => {
         const usedEv = (state.r5.usedAnswers || []).find(u => normalizeAnswer(u.answer) === normalizeAnswer(a));
         if (usedEv) {
           const usedTeam = state.teams.find(t => t.id === usedEv.teamId);
-          return `<button class="btn-ghost btn-sm" disabled title="已被${escapeAttr(usedTeam?.name||'')}用过"
-                    style="opacity:.4;text-decoration:line-through">${escapeHtml(a)}</button>`;
+          return `<button class="answer-btn" disabled title="已被${escapeAttr(usedTeam?.name||'')}用过"
+                    style="opacity:.35;text-decoration:line-through">${escapeHtml(a)}</button>`;
         }
-        return `<button class="btn-ghost btn-sm" onclick="r5PickAnswer('${escapeAttr(a)}')">${escapeHtml(a)}</button>`;
+        return `<button class="answer-btn" onclick="r5PickAnswer('${escapeAttr(a)}')">${escapeHtml(a)}</button>`;
       }).join('') + `</div>`;
   } else {
     poolBox.innerHTML = curTheme
@@ -3105,9 +3115,10 @@ function r4Next() {
   }
 }
 function r4StartTimer() { cdSpoken.clear(); startTimer(state.r4.timerSec*1000, 4); }
-/** 选/取消代表本队指认的队员。点已选中的那个＝取消，因为这一项本就是可选的 */
+/** 选择代表本队指认的队员。已改为必选，故不再支持「再点一次取消」——
+ *  取消只会让结算被拦下，点错人直接点另一个即可。 */
 function r4SetMem(i) {
-  state.r4.currentMemberIdx = (state.r4.currentMemberIdx === i) ? null : i;
+  state.r4.currentMemberIdx = i;
   save(); render();
 }
 
@@ -3168,6 +3179,10 @@ function r4DelExtra(i) {
 let _r4Locked = false;   // 本队判分锁：判过一次后拦住重复判分，直到切队/翻新牌
 function doR4Score() {
   if (_r4Locked) return;                 // 防重复判分（快速双击）
+  // 队员必选（与②③一致）：谁代表本队指认，必须由操作员现场点明
+  if (state.r4.currentMemberIdx == null) {
+    return alert('请先选择代表本队指认的队员，再结算得分。\n\n队员按钮在上方「第N队」那一栏。');
+  }
   const ev = scoreR4(state.r4.currentTeamIdx);
   if (!ev) return;
   _r4Locked = true;

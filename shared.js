@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-29.18';
+const APP_BUILD = '2026-07-29.20';
 
 // 本页面实例的唯一标识，随广播一起发出。
 // 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
@@ -1794,11 +1794,10 @@ function r3TryBuzz(teamId, onViolationDone) {
   state.r3.buzzState      = 'locked';
   state.r3.buzzedTeam     = teamId;
   state.r3.selectedTeam   = teamId;
-  // 预选第一名队员，而不是留空。留空时选项不可点、判分按钮也是灰的，
-  // 操作员必须先找到队员按钮点一下才能判分 —— 而队伍抢到后是【先口头作答】，
-  // 操作员往往这时才知道是谁在答，被这一步卡住的同时 15 秒答题倒计时还在跑。
-  // 预选后判分链路立即可用，答完再改选人即可（个人分按最终选中的人记）。
-  state.r3.selectedMember = 0;
+  // 不预选队员：谁答的题必须由操作员现场点明（与②④一致）。
+  // 抢答的加减分同时记进该队员的个人分，用于赛后评「最佳个人」，
+  // 预选成队员1 会让没上场的人白拿分。
+  state.r3.selectedMember = null;
   state.r3.buzzPulse      = (state.r3.buzzPulse || 0) + 1;
   state.r3.lastBuzzTeam   = teamId;
   // 「谁抢到了」由题目上方那条提示条显示（不遮挡题目），记分牌【此刻不弹】——
