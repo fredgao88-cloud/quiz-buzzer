@@ -47,6 +47,15 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 .q-opt{padding:calc(18px * var(--qs)) calc(28px * var(--qs));border-radius:12px;border:2px solid var(--border);background:var(--surface);font-size:calc(clamp(21px,2.3vw,38px) * var(--qs));font-weight:600;line-height:1.4;transition:all .3s}
 .q-opt.correct{background:#14532d55;border-color:var(--green);color:#86efac;transform:scale(1.02)}
 .q-opt.wrong{background:#7f1d1d55;border-color:var(--red);color:#fca5a5;transform:scale(1.02)}
+/* ⑥ 观众答题的判定牌。观众答题不计分，全场只能靠这个牌子知道刚才那位答对没有，
+   所以做得大而直白，颜色一眼可辨（绿=对 / 红=错）。 */
+#r6-verdict{display:none;margin-top:calc(16px * var(--qs));padding:calc(10px * var(--qs)) calc(46px * var(--qs));
+  border-radius:999px;font-size:calc(clamp(26px,3vw,52px) * var(--qs));font-weight:900;letter-spacing:6px;
+  animation:accepted-in .4s cubic-bezier(.22,1.4,.4,1) both}
+#r6-verdict.ok{color:#dcfce7;background:#14532de6;border:4px solid var(--green);
+  box-shadow:0 0 50px rgba(34,197,94,.4)}
+#r6-verdict.no{color:#fee2e2;background:#7f1d1de6;border:4px solid var(--red);
+  box-shadow:0 0 50px rgba(239,68,68,.4)}
 #q-answer-box{margin-top:calc(20px * var(--qs));padding:calc(16px * var(--qs)) calc(30px * var(--qs));border-radius:12px;background:#1e3a5f;border:2px solid var(--accent);font-size:calc(clamp(22px,2.5vw,40px) * var(--qs));font-weight:700;color:#93c5fd;text-align:center;max-width:min(90vw,1500px);width:100%}
 /* 外层 inline-block 会收缩到图片的实际显示尺寸，标记层的百分比坐标才对得准。
    注意 #q-image 不能设 object-fit:contain + 固定宽高，否则图片在元素内留黑边、坐标会偏。 */
@@ -340,6 +349,7 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
     </div>
     <div id="q-image-missing" style="display:none"></div>
     <div id="q-options" style="display:none"></div>
+    <div id="r6-verdict"></div>
     <div id="q-answer-box" style="display:none"></div>
   </div>
 
@@ -692,6 +702,18 @@ function updateQuestion() {
   // 轮到 spot 题时外层显示了、img 自己还是 none —— 图和标记全看不见。
   const imgWrap = document.getElementById('q-image-wrap');
 
+  // ⑥ 观众答题的判定牌。必须在下面几处提前 return 之前算完 ——
+  // 否则切回赛前准备或换到没有题的状态时，「答对」会赖在屏上不走。
+  const vd = document.getElementById('r6-verdict');
+  const jd = (state.currentRound === 6 && qIdx != null) ? (state.r6?.judged ?? null) : null;
+  if (jd == null) vd.style.display = 'none';
+  else {
+    // 必须显式给值：基线样式里就是 display:none，把内联样式清成 '' 只会落回 none
+    vd.style.display = 'inline-block';
+    vd.className     = jd ? 'ok' : 'no';
+    vd.textContent   = jd ? '答对' : '答错';
+  }
+
   // 赛前准备：整屏背景图由 #prep-cover 负责，这里只清空题目区
   if (state.currentRound === 0) {
     hint.style.display = 'none';
@@ -714,6 +736,7 @@ function updateQuestion() {
   hint.style.display = 'none';
   stem.style.display = '';
   stem.textContent   = q.stem || '';
+
 
   // 找茬场景图（第四环节 spot 题）
   const wrap = document.getElementById('q-image-wrap');

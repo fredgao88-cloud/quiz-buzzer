@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-29.28';
+const APP_BUILD = '2026-07-29.30';
 
 // 本页面实例的唯一标识，随广播一起发出。
 // 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
@@ -118,8 +118,6 @@ function defaultState() {
       3: '一、主持人出题并宣布「开始抢答」后，各队方可按抢答器。\n二、最先抢到的队伍作答，答对加 {分值} 分，答错扣 {扣分} 分。\n三、抢答犯规（抢答口令前抢按）扣分并暂停一次抢答资格。\n四、每题限时 {秒数} 秒，本环节{上限}。',
       4: '一、各队依次上场，在场景图中找出服务不规范之处。\n二、每找对一处得 {分值} 分，每图至多 {处数} 处。\n三、每队本环节{上限}。\n四、限时 {秒数} 秒，时间到即停止作答，误报不倒扣。',
       5: '一、各队围绕主题轮流说出符合要求的服务用语或要点。\n二、每答出一条有效内容得 {分值} 分；本题擂主额外得 {擂主分} 分。\n三、重复、不符或 {秒数} 秒内答不出即淘汰出本题。\n四、本环节{上限}。',
-      // 观众互动环节：不计分、不限时，主持人手动出题与公布答案，节奏完全由现场掌握
-      6: '一、本环节面向现场观众，不计入各队成绩。\n二、主持人随机出题，观众举手抢答。\n三、不限时，答对与否由主持人现场认定。',
     },
     roundRulesDismissed: {}, // 规则朗读完毕后置 true，大屏据此自动关闭规则窗口
 
@@ -255,12 +253,14 @@ function defaultState() {
     },
 
     // ── ⑥ 观众答题（互动环节）──────────────────
-    // 面向现场观众的穿插环节，刻意做得极简：不计分、不计时、不选队员，
-    // 出题与公布答案全靠主持人手点，节奏由现场气氛决定。
+    // 穿插用的轻量环节：点【随机出题】就开始，观众喊答案，主持人点答对/答错。
+    // 没有规则朗读、没有「开始本环节」、不计时、不计分、不选队员。
     // 抽到的题照样记进全场 usedQIds —— 观众已经当众听过答案的题，不能再出给选手。
     r6: {
       currentQIdx: null,   // 当前题在 questions[] 中的索引
-      usedQIds:    [],     // 本环节出过的题 id（供「已出 N 题」计数与重置）
+      usedQIds:    [],     // 本环节出过的题 id（供「已出 N 题」计数）
+      judged:      null,   // 本题判定：true=答对 / false=答错 / null=还没判。
+                           // 只用于大屏亮个牌子和播报，不进分数也不进流水
     },
 
     // ── 翻牌选题 ────────────────────────────────
@@ -505,12 +505,23 @@ function r4SpotPosCount(imageKey) {
 // 互相广播到页面卡死。收到不比本地新的快照一律丢弃即可根治。
 let _applyingRemote = false;
 
+/**
+ * 旧存档清理。deepMerge 是「默认值打底、存档覆盖」，所以从 defaultState 里
+ * 删掉的字段不会自动从老存档里消失 —— 得在这里显式清。
+ */
+function _migrate() {
+  // ⑥ 观众答题曾经有过规则文案（v2026-07-29.27~.28）。后来定为穿插互动，
+  // 不念规则、设置里也不再有这一页，残留的文案只会跟着配置导出到处跑。
+  if (state.roundRules && state.roundRules[6] !== undefined) delete state.roundRules[6];
+}
+
 function load() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return;
   try {
     const loaded = JSON.parse(raw);
     state = deepMerge(defaultState(), loaded);
+    _migrate();
   } catch(e) { console.warn('[rz] load failed', e); }
 }
 
@@ -2360,10 +2371,14 @@ function _r5NextTurn() {
 // 全场最简单的一个环节：随机出题 → 主持人公布答案 → 下一题。
 // 没有倒计时、没有队伍、没有分数，所以这里既不碰 timer 也不碰 teams/history。
 
-/** 进入观众答题：清掉当前题（出过的题记录保留，用于计数） */
+/**
+ * 切进观众答题视图。没有「开始本环节」按钮 —— 点【随机出题】时按需调用，
+ * 出题即开始。也不读规则：穿插环节，念规则反而打断现场节奏。
+ */
 function initR6() {
   state.currentRound        = 6;
   state.r6.currentQIdx      = null;
+  state.r6.judged           = null;
   state.displayMode         = 'question';
   state.showAnswerOnDisplay = false;
   state.showScoresOnDisplay = false;
@@ -2389,7 +2404,8 @@ function r6DrawQuestion() {
   state.r6.currentQIdx      = idx >= 0 ? idx : null;
   state.r6.usedQIds.push(q.id);
   markQIdsUsed([q.id]);
-  state.showAnswerOnDisplay = false;   // 新题上屏，先把答案藏起来
+  state.r6.judged           = null;    // 新题：判定与答案都归零
+  state.showAnswerOnDisplay = false;
   save();
   return q;
 }
@@ -2538,6 +2554,7 @@ function resetContest() {
   state.r5.currentMemberIdx = null;
 
   state.r6.currentQIdx     = null; state.r6.usedQIds         = [];
+  state.r6.judged          = null;
 
   // 赛程与大屏
   state.currentRound        = 0;
@@ -2623,7 +2640,7 @@ function loadQuestions(data) {
   state.r4.spotJudge   = {};    state.r4.extraSpots = [];
   state.r5.usedAnswers = [];    state.r5.themeWinners = [];
   state.r5.lastAccepted = null; state.r5.awaitingStart = false;
-  state.r6.currentQIdx = null;  state.r6.usedQIds   = [];
+  state.r6.currentQIdx = null;  state.r6.usedQIds   = [];  state.r6.judged = null;
 
   state.pickedAnswer        = null;
   state.showAnswerOnDisplay = false;
