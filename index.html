@@ -282,6 +282,15 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     </div>
   </div>
   <div class="card">
+    <div class="card-title">配置备份 <span class="pill">换机器用</span></div>
+    <div class="row">
+      <button class="btn-ghost btn-sm" onclick="doExportConfig()">导出配置 JSON</button>
+      <button class="btn-ghost btn-sm" onclick="document.getElementById('cfg-file-input').click()">导入配置 JSON</button>
+      <input type="file" id="cfg-file-input" accept=".json" style="display:none" onchange="loadCfgFile(this)">
+    </div>
+    <div id="p0-cfg-hint" style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.7"></div>
+  </div>
+  <div class="card">
     <div class="card-title">成绩导出 <span class="pill">赛后存档</span></div>
     <div class="row">
       <button class="btn-ghost btn-sm" onclick="doExport('team')">队伍成绩 CSV</button>
@@ -1050,6 +1059,20 @@ function renderP0() {
   }
 
   renderMemberScores();
+
+  // 配置备份卡：把「本机已配了多少」写出来，一眼看出换机器后还缺什么
+  const cfgHint = document.getElementById('p0-cfg-hint');
+  if (cfgHint) {
+    const spotDone = r4ImagePool().reduce((a,q)=>a + (r4SpotPosCount(q.imageKey||q.id) >= (q.spots?.length||0) && q.spots?.length ? 1 : 0), 0);
+    const spotAll  = r4ImagePool().length;
+    cfgHint.innerHTML =
+      '含：队名队员、抢答键位、各环节计分/倒计时/抽题配置、规则文案、'
+      + '<b>找茬点坐标</b>、背景图与 Logo、TTS 设置。<br>'
+      + '<span style="color:var(--muted)">不含题库与赛况（分数、流水、抽签）—— 题库用上面的【导入题库 JSON】。</span><br>'
+      + `本机现状：找茬点坐标 <b>${spotDone}/${spotAll}</b> 张图已标满`
+      + `　背景图 ${state.questionBg ? '题目图已设' : '题目图未设'}／${state.prepBg ? '赛前图已设' : '赛前图未设'}`
+      + `　系统读题 ${state.r3.autoRead ? '开' : '关'}`;
+  }
 
   // 题库
   // 题库统计：按【题型】报余量（池子是扁平的，不按环节分），另列单独上传的图题/令题
@@ -3274,6 +3297,42 @@ function doExport(kind) {
     if (!confirm('判分流水为空（尚未产生任何判分记录），仍要导出吗？')) return;
   }
   _download(`${brand}_${label}_${stamp}.${ext}`, build(), mime);
+}
+
+// ── 赛前配置备份 ─────────────────────────────────
+// 配置存在 localStorage 里，不跟着 git 走 —— 换台电脑或清一次浏览器数据，
+// 找茬点坐标、计分、倒计时、规则文案、TTS、背景图、键位就全没了，得重配一遍。
+function doExportConfig() {
+  const stamp = new Date().toISOString().slice(0,10);
+  _download(`赛前配置_${stamp}.json`, buildConfigJSON(), 'application/json');
+}
+
+function loadCfgFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    let data;
+    try { data = JSON.parse(e.target.result); }
+    catch (err) { input.value=''; return alert('JSON 解析失败：' + err.message); }
+    if (data?._type !== 'rz_contest_config') {
+      input.value='';
+      return alert('这不是配置文件。\n\n配置文件是【导出配置 JSON】生成的，\n题库请用上面的【导入题库 JSON】。');
+    }
+    if (!confirm('导入配置将覆盖：队名与队员、键位、各环节计分/倒计时/抽题配置、\n'
+               + '规则文案、找茬点坐标、背景图与 Logo、TTS 设置。\n\n'
+               + '不会动：分数、判分流水、抽签结果、题库、当前比赛进度。\n\n确定导入？')) {
+      input.value=''; return;
+    }
+    if (loadConfig(data)) {
+      render();
+      alert(`配置已导入（导出自 ${data._build || '未知版本'}，${(data._exportedAt||'').slice(0,10)}）。`);
+    } else {
+      alert('导入失败，文件内容不完整。');
+    }
+    input.value='';
+  };
+  reader.readAsText(file, 'utf-8');
 }
 
 // ── 并列检测 / 加赛 ───────────────────────────────

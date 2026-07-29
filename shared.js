@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-29.5';
+const APP_BUILD = '2026-07-29.6';
 
 // 本页面实例的唯一标识，随广播一起发出。
 // 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
@@ -2640,6 +2640,86 @@ function buildArchiveJSON() {
     r5:         { themeWinners: state.r5.themeWinners, isTiebreak: state.r5.isTiebreak },
     history:    state.history,
   }, null, 2);
+}
+
+// =====================================================
+// 赛前配置的导出 / 导入
+// =====================================================
+// 解决的是「换台机器什么都要重做」：配置全在 localStorage 里，不跟着 git 走，
+// 也不在题库文件里 —— 找茬点坐标、计分、倒计时、规则文案、TTS、背景图、键位，
+// 每换一台电脑或清一次浏览器数据就得从头配一遍。
+//
+// 导出的是【配置】，不含题库（另有 questions.json）、也不含赛况
+// （分数、判分流水、抽签结果、抽题记录）—— 那些是一场比赛的产物，
+// 跟着机器走没有意义，混进来还容易在导入时把正在进行的比赛冲掉。
+
+const CONFIG_EXPORT_VERSION = 1;
+
+/** 只挑出对象里指定的几个键（缺的不补） */
+function _pickKeys(obj, keys) {
+  const out = {};
+  for (const k of keys) if (obj?.[k] !== undefined) out[k] = obj[k];
+  return out;
+}
+
+/** 赛前配置 JSON。换机器时导出这一个文件带走即可。 */
+function buildConfigJSON() {
+  return JSON.stringify({
+    _type:       'rz_contest_config',
+    _version:    CONFIG_EXPORT_VERSION,
+    _build:      APP_BUILD,
+    _exportedAt: new Date().toISOString(),
+
+    brandName:  state.brandName,
+    logo:       state.logo,
+    prepBg:     state.prepBg,
+    questionBg: state.questionBg,
+    // 只带队名与队员，不带分数
+    teams:      state.teams.map(t => ({ id: t.id, name: t.name, members: [...(t.members || [])] })),
+    keymap:     state.keymap,
+    roundRules: state.roundRules,
+    roundCfg:   state.roundCfg,
+    scoreCfg:   state.scoreCfg,
+    cardFlip:   _pickKeys(state.cardFlip, ['enabled', 'rounds', 'deckSize']),
+    tts:        state.tts,
+    r1:         _pickKeys(state.r1, ['timerSec', 'flipTimerSec', 'autoAdvance']),
+    r2:         _pickKeys(state.r2, ['timerSec', 'flipTimerSec']),
+    r3:         _pickKeys(state.r3, ['timerSec', 'autoRead', 'beep']),
+    r4:         _pickKeys(state.r4, ['timerSec', 'spotPos']),   // spotPos = 找茬点坐标
+    r5:         _pickKeys(state.r5, ['timerSec']),
+  }, null, 1);
+}
+
+/**
+ * 导入赛前配置。只覆盖配置项 —— 分数、判分流水、抽签、题库、当前进度一律不动，
+ * 所以赛中误点也不会毁掉比赛（最坏是配置被换掉，再导回去即可）。
+ * 返回 false = 文件格式不对。
+ */
+function loadConfig(data) {
+  if (!data || data._type !== 'rz_contest_config') return false;
+
+  const setIf = (k) => { if (data[k] !== undefined) state[k] = data[k]; };
+  ['brandName', 'logo', 'prepBg', 'questionBg', 'keymap', 'roundRules', 'roundCfg', 'scoreCfg']
+    .forEach(setIf);
+
+  // 队伍：按 id 对上号，只改队名和队员，分数原样保留
+  if (Array.isArray(data.teams)) {
+    for (const src of data.teams) {
+      const t = getTeam(src.id);
+      if (!t) continue;
+      if (src.name)                 t.name    = src.name;
+      if (Array.isArray(src.members)) t.members = [...src.members];
+    }
+  }
+
+  if (data.cardFlip) Object.assign(state.cardFlip, data.cardFlip);
+  if (data.tts)      state.tts = deepMerge(state.tts, data.tts);
+  for (const r of ['r1', 'r2', 'r3', 'r4', 'r5']) {
+    if (data[r]) Object.assign(state[r], data[r]);
+  }
+
+  save();
+  return true;
 }
 
 // =====================================================
