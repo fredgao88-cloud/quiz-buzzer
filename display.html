@@ -605,6 +605,15 @@ function updateTimer() {
   if (txt.dataset.gc !== undefined) delete txt.dataset.gc;   // 退出倒数，下次进来能重新触发
 
   if (ts === 'idle') {
+    // 飞花令「预备」：轮次已定、表还没起（在等「下面请X队答题，开始答题」念完）。
+    // 这时候显示满格秒数而不是「--」—— 选手看到的是「我有 10 秒，马上开始」，
+    // 看到「--」只会以为设备坏了。
+    if (state.currentRound === 5 && state.r5.awaitingStart) {
+      arc.style.stroke = '#f59e0b';
+      arc.setAttribute('stroke-dashoffset', '0');
+      txt.textContent = String(state.r5.timerSec);
+      txt.className = 'ring-text'; return;
+    }
     arc.style.stroke = '#1e3a5f';
     arc.setAttribute('stroke-dashoffset', '0');
     txt.textContent = '--'; txt.className = 'ring-text'; return;
@@ -1028,7 +1037,8 @@ function updateFlowerArea() {
   const turnEl  = document.getElementById('flower-turn');
   if (curTeam && active.includes(curId)) {
     const c = tColor(curTeam);
-    turnEl.textContent = `轮到 ${curTeam.name} 作答`;
+    turnEl.textContent = state.r5.awaitingStart ? `预备 —— ${curTeam.name} 作答`
+                                                : `轮到 ${curTeam.name} 作答`;
     turnEl.style.cssText = `font-size:clamp(20px,2.5vw,32px);font-weight:700;padding:14px 40px;border-radius:14px;border:3px solid ${c};color:${c};background:${c}cc;text-shadow:0 1px 6px rgba(0,0,0,.7);animation:pulse-glow-g 1.2s ease-in-out infinite`;
   } else {
     turnEl.textContent = '';
@@ -1102,11 +1112,14 @@ document.addEventListener('keydown', e => {
 });
 
 // ── 循环更新（requestAnimationFrame） ─────────────
-function loop() {
-  updateTimer();
-  requestAnimationFrame(loop);
-}
-requestAnimationFrame(loop);
+// ⚠️ 同控制台：不能用 requestAnimationFrame 驱动。
+// 大屏多半开在投影/副屏上，很容易被别的窗口挡住或被系统判为不可见，
+// 那时 rAF 会被完全暂停 —— 全场看着的倒计时就那么冻住了。
+// setInterval 后台会被限流，但一直在跑；牌面一秒一跳，250ms 足够。
+function loop() { updateTimer(); }
+setInterval(loop, 250);
+loop();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) loop(); });
 
 // ── 状态变更监听 ─────────────────────────────────
 onChange(() => render());

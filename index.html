@@ -546,6 +546,9 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
       <div id="r5-member-btns" class="row"></div>
       <!-- 判定：参考答案点不到的走【手工录入】，答错/说不出走【判错·出局】 -->
       <div class="row" style="margin-top:8px">
+        <!-- 兜底：正常情况下播报念完会自动起表，TTS 关着/卡死时用这个手动起 -->
+        <button id="r5-start-timer" class="btn-primary" onclick="r5StartTurnTimer()"
+                style="display:none">▶ 开始计时</button>
         <button class="btn-success" onclick="r5ManualValid()"
                 title="参考答案里没有、但评委现场认可 —— 手工录入内容，计有效分并显示在大屏上">✓ 手工录入有效答案</button>
         <button class="btn-danger" onclick="r5ElimCurrent()"
@@ -1633,12 +1636,18 @@ function renderP5() {
     }
   }
 
+  const startBtn = document.getElementById('r5-start-timer');
+  if (startBtn) startBtn.style.display = state.r5.awaitingStart ? '' : 'none';
+
   const banner = document.getElementById('r5-turn-banner');
   if (curT && active.includes(curId)) {
     const c = tColor(curT);
     const judging = state.r5.currentMemberIdx != null;
-    banner.textContent = judging ? `${curT.name} 作答中 · 已停表，等待判定` : `轮到：${curT.name}`;
-    banner.className = 'buzz-banner ' + (judging ? 'buzz-locked' : 'buzz-armed anim-pulse');
+    const waiting = !!state.r5.awaitingStart;
+    banner.textContent = waiting ? `预备：${curT.name} · 播报完自动开始计时`
+                       : judging ? `${curT.name} 作答中 · 已停表，等待判定`
+                                 : `轮到：${curT.name}`;
+    banner.className = 'buzz-banner ' + (waiting || judging ? 'buzz-locked' : 'buzz-armed anim-pulse');
     banner.style.cssText += `;border-color:${c};color:${c}`;
   } else {
     banner.textContent = '待机';
@@ -1979,11 +1988,19 @@ try {
 // ────────────────────────────────────────────────
 // 计时器轮询
 // ────────────────────────────────────────────────
-function timerLoop() {
-  renderTimer();
-  requestAnimationFrame(timerLoop);
-}
-requestAnimationFrame(timerLoop);
+// ⚠️ 不能用 requestAnimationFrame 驱动。
+// rAF 在页面被切走 / 被别的窗口挡住时会被 Chrome 完全暂停 —— 现场表现是：
+// 操作员切去看一眼题库或别的窗口，倒计时就冻在那儿不动，
+// 而且【超时判定永远不触发】（超时是在 renderTimer 里检查的），
+// 整个环节静悄悄地卡死，回来一看表停在 0 上，谁也不知道该点什么。
+// setInterval 在后台标签页会被限流到约 1 秒一次，但照样在跑，超时判定不会漏。
+// 计时牌一秒变一个数，250ms 的刷新率绰绰有余，rAF 的流畅度在这儿没有价值。
+function timerLoop() { renderTimer(); }
+setInterval(timerLoop, 250);
+timerLoop();
+// 页面重新可见时立刻补一拍：后台被限流期间攒下的时间差要马上反映到牌面上，
+// 该判超时的当场判掉，不等下一个 250ms。
+document.addEventListener('visibilitychange', () => { if (!document.hidden) timerLoop(); });
 
 // ────────────────────────────────────────────────
 // 操作函数
@@ -3254,14 +3271,25 @@ function r5RevealTheme(i) {
 // 每次判定后把「结果」和「请下一队作答」拼成【一条队列】播 —— 分两次播的话，
 // 后一句会把前一句掐掉（speak/speakQueue 会打断当前播报）。
 
+/**
+ * 播报念完 → 起本轮的表。也挂在【▶ 开始计时】按钮上做兜底。
+ * cdSpoken 必须在 startTimer 之前清 —— startTimer 内部会 save 触发重绘，
+ * 重绘时若已到报数点就会立刻念，清晚了那一句会被当成没念过再念一遍。
+ */
+function r5StartTurnTimer() {
+  cdSpoken.clear();
+  if (r5BeginTurnTimer()) render();
+}
+
 /** 揭晓令题：「本题令题，XXX」+「请某队作答」连播 */
 function r5SpeakTheme() {
   const themes = state.questions.filter(q => q.round === 5 && q.type === 'theme');
   const t      = themes[state.r5.currentThemeIdx];
   const order  = state.r5.teamOrder || [];
   const team   = getTeam(order[state.r5.currentTurnIdx]);
-  const segs = [t ? `本题令题，${t.stem}` : '', team ? `请${team.name}作答` : ''].filter(Boolean);
-  if (segs.length) speakQueue(segs);
+  const segs = [t ? `本题令题，${t.stem}` : '', team ? `${team.name}先答，开始答题` : ''].filter(Boolean);
+  if (segs.length) speakQueue(segs, r5StartTurnTimer);
+  else r5StartTurnTimer();
 }
 
 /**
@@ -3277,7 +3305,10 @@ function r5SpeakResultAndTurn(resultText) {
   const tid    = order[state.r5.currentTurnIdx];
   const next   = (active.length > 1 && active.includes(tid)) ? getTeam(tid) : null;
   const segs = [resultText, next ? `下面请${next.name}答题，开始答题` : ''].filter(Boolean);
-  if (segs.length) speakQueue(segs);
+  // ⚠️ 起表挂在播报之后（与 ①②④ 一致）：播报的四五秒不能算进下一队的作答时间，
+  // 报数也不能和播报叠着响。speakQueue 的回调有看门狗兜底，TTS 卡死也会放行。
+  if (segs.length) speakQueue(segs, r5StartTurnTimer);
+  else r5StartTurnTimer();
 }
 
 function r5SetTheme(i) { r5RevealTheme(i); }
@@ -3360,11 +3391,14 @@ function r5DoValid(teamId) {
       `【确定】= 判 ${team?.name || ''} 重复出局\n` +
       `【取消】= 评委认定不算重复，仍判有效 +1`
     );
+    // 无论判哪边，都要接一句播报 —— 下一队的表就挂在这句播完之后起，
+    // 少这一句，轮次会停在「预备」上不动（只剩【▶ 开始计时】能救）。
     if (choice) {
       r5Eliminate(teamId);
+      r5SpeakResultAndTurn(`${team?.name || ''}，答案重复，出局`);
     } else {
-      r5ValidAnswer(teamId, text, { force: true });   // 评委裁定：强制通过
-      // 轮次与计时已在 r5Eliminate/_r5NextTurn 里同步完成
+      const r2 = r5ValidAnswer(teamId, text, { force: true });   // 评委裁定：强制通过
+      r5SpeakResultAndTurn(`${team?.name || ''}，答题正确，得${scoreToSpeech(Math.abs(r2?.delta ?? 1))}`);
     }
     render();
     return;
@@ -3399,7 +3433,12 @@ function r5PickAnswer(answer) {
   if (!r5RequireMember()) return;
   const r = r5ValidAnswer(curId, answer);
   if (!r) return;
-  if (r.duplicate) { alert('这条参考答案刚被占用了，请换一条或点【出局】。'); render(); return; }
+  if (r.duplicate) {
+    // 没有推进轮次（r5ValidAnswer 查重命中时不计分不推进），表还停在本队手里，
+    // 但选队员时已经停表了 —— 给操作员一条明路，别让人对着不动的表发懵。
+    alert('这条参考答案刚被别的队占用了。\n\n请换一条，或点【✗ 判错 · 出局】。');
+    render(); return;
+  }
   r5SpeakResultAndTurn(`${r.teamName}，答题正确，得${scoreToSpeech(Math.abs(r.delta))}`);
   render();
 }
