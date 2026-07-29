@@ -60,6 +60,9 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 /* 记分牌亮着时给它让出高度（--scores-h 由 updateScoresBar 按实际高度写入），
    否则它会盖住题目区下方的内容 */
 body.scores-on #q-area{padding-bottom:calc(var(--scores-h,0px) + 14px)}
+/* 飞花令是 position:absolute inset:0 的整屏层，同样要给记分牌让位，
+   否则「已用答案」会被记分牌盖掉一截 */
+body.scores-on #flower-area{padding-bottom:calc(var(--scores-h,0px) + 14px)}
 #q-area.img-mode{padding:8px 16px}
 body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 #q-area.img-mode #q-stem{font-size:calc(clamp(15px,1.6vw,26px) * var(--qs));line-height:1.3;margin-bottom:calc(4px * var(--qs))}
@@ -235,18 +238,35 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 .draw-slot-d .ds-name{font-size:20px;font-weight:800;text-align:center}
 
 /* ── 飞花令界面 ── */
-#flower-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);background-size:cover;background-position:center;z-index:5;padding:32px}
+#flower-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);background-size:cover;background-position:center;z-index:5;padding:32px;overflow:hidden}
+/* 令题、轮次条、答案框都不许被压缩；真放不下时只让「已用答案」那一块收缩并内部滚动 */
+#flower-theme,#flower-turn,#flower-accepted,#flower-used-label{flex:0 0 auto}
+#flower-used{flex:0 1 auto;min-height:0;overflow-y:auto}
 #flower-area.show{display:flex}
 #flower-theme{font-size:clamp(32px,4vw,58px);font-weight:800;color:var(--accent);margin-bottom:10px;letter-spacing:1px;text-shadow:0 3px 12px rgba(0,0,0,.9),0 0 26px rgba(0,0,0,.65)}
 #flower-turn{font-size:clamp(26px,3.2vw,46px);font-weight:800;padding:18px 52px;border-radius:16px;border:4px solid var(--green);color:var(--green);background:#14532dcc;animation:pulse-glow-g 1.2s ease-in-out infinite}
 #flower-used{font-size:clamp(20px,2.4vw,34px);color:var(--text);max-width:min(90vw,1400px);text-align:center;line-height:2;text-shadow:0 1px 6px rgba(0,0,0,.85)}
-/* 刚被判有效的那条答案 —— 手工录入的（评委现场认可、参考清单里没有的）
-   全场只能靠这块看到内容，所以给足字号 */
-#flower-accepted{font-size:clamp(24px,3vw,42px);font-weight:800;padding:14px 40px;border-radius:14px;
-  border:3px solid var(--green);color:#dcfce7;background:#14532dd9;max-width:min(90vw,1400px);
-  text-align:center;line-height:1.4;text-shadow:0 2px 8px rgba(0,0,0,.85)}
-#flower-accepted .tag{font-size:.68em;font-weight:700;color:var(--yellow);margin-left:14px;
-  border:2px solid var(--yellow);border-radius:8px;padding:2px 10px;vertical-align:middle}
+/* 刚被判有效的那条答案。
+   只在「X队答题正确得N分。下面请Y队答题」这句播报期间亮着，下一队一开表就撤 ——
+   窗口就那几秒，所以要够大够抢眼，让全场一眼看清认的是哪句话。
+   手工录入的（评委现场认可、参考清单里没有的）尤其依赖这块：那种内容
+   只存在于操作员刚敲进去的字符串里，不上屏等于没发生过。 */
+#flower-accepted{margin:18px 0 6px;padding:26px 64px;border-radius:22px;
+  border:5px solid var(--green);background:#14532de6;max-width:min(94vw,1600px);
+  text-align:center;box-shadow:0 0 60px rgba(34,197,94,.35),0 12px 40px rgba(0,0,0,.6);
+  animation:accepted-in .45s cubic-bezier(.22,1.4,.4,1) both}
+#flower-accepted .who{display:block;font-size:clamp(20px,2.2vw,34px);font-weight:800;
+  letter-spacing:2px;margin-bottom:10px;text-shadow:0 2px 8px rgba(0,0,0,.85)}
+#flower-accepted .ans{display:block;font-size:clamp(40px,5.6vw,96px);font-weight:900;
+  color:#f0fdf4;line-height:1.25;letter-spacing:3px;
+  text-shadow:0 3px 14px rgba(0,0,0,.9),0 0 40px rgba(34,197,94,.5)}
+#flower-accepted .tag{display:inline-block;margin-top:14px;font-size:clamp(16px,1.7vw,26px);
+  font-weight:800;color:#0b1220;background:var(--yellow);border-radius:10px;
+  padding:5px 18px;letter-spacing:2px}
+@keyframes accepted-in{
+  from{opacity:0;transform:scale(.82) translateY(18px)}
+  to  {opacity:1;transform:scale(1)   translateY(0)}
+}
 #flower-used-label{font-size:clamp(17px,1.9vw,28px);color:var(--muted);text-shadow:0 1px 6px rgba(0,0,0,.85)}
 
 /* 全屏无题提示 */
@@ -1045,17 +1065,18 @@ function updateFlowerArea() {
     turnEl.style.cssText = '';
   }
 
-  // 刚判有效的那条：整句亮出来。参考清单里点选的也显示，但手工录入的才是刚需 ——
-  // 那种内容只存在于操作员刚敲进去的字符串里，不显示就等于没发生过。
+  // 刚判有效的那条：整句放大亮出来。下一队一开表 lastAccepted 就被清掉（见
+  // shared.js r5BeginTurnTimer），所以这个框只在判分播报那几秒里存在。
   const acc   = state.r5.lastAccepted;
   const accEl = document.getElementById('flower-accepted');
-  if (acc && acc.answer) {
+  if (acc && acc.answer && acc.themeIdx === state.r5.currentThemeIdx) {
     const t = state.teams.find(x => x.id === acc.teamId);
     const c = t ? tColor(t) : 'var(--green)';
     accEl.style.borderColor = c;
-    accEl.innerHTML = `<span style="color:${c}">${escapeHtml(t ? t.name : '')}</span>`
-      + (acc.memberName ? ` · ${escapeHtml(acc.memberName)}` : '')
-      + `：${escapeHtml(acc.answer)}`
+    accEl.innerHTML =
+        `<span class="who" style="color:${c}">${escapeHtml(t ? t.name : '')}`
+      + (acc.memberName ? ` · ${escapeHtml(acc.memberName)}` : '') + `　答对</span>`
+      + `<span class="ans">${escapeHtml(acc.answer)}</span>`
       + (acc.manual ? `<span class="tag">评委认可</span>` : '');
     accEl.style.display = '';
   } else {

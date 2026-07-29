@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-29.24';
+const APP_BUILD = '2026-07-29.25';
 
 // 本页面实例的唯一标识，随广播一起发出。
 // 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
@@ -245,7 +245,7 @@ function defaultState() {
                              // 飞花令是队内轮着说，不同轮次很可能换人
       // 最近一条被判有效的答案，大屏据此把内容亮出来。手工录入的（参考答案里没有、
       // 评委现场认可的）尤其要显示 —— 否则全场只听到「有效」，不知道认的是哪句话。
-      lastAccepted:     null,// { teamId, teamName, memberName, answer, manual, ts }
+      lastAccepted:     null,// { themeIdx, teamId, teamName, memberName, answer, manual, ts }
       // 轮次已推进、但表还没起 —— 在等「下面请X队答题，开始答题」这句念完。
       // 大屏此时把表停在满格显示「预备」，念完才真正开始走。
       awaitingStart:    false,
@@ -2225,6 +2225,9 @@ function r5ValidAnswer(teamId, answer, opts = {}) {
   const pool   = (r5CurrentTheme()?.answerPool) || [];
   const inPool = pool.some(a => normalizeAnswer(a) === normalizeAnswer(answer));
   state.r5.lastAccepted = {
+    // 记下所属令题：状态是持久化的，上一场没走完就退出会留下一条陈年答案，
+    // 下次一进飞花令它就先闪一下。大屏据此校验归属，对不上就不显示。
+    themeIdx: state.r5.currentThemeIdx,
     teamId: team.id, teamName: team.name,
     memberName: (mIdx != null ? team.members[mIdx] : '') || '',
     answer,
@@ -2300,6 +2303,10 @@ function r5SetWinner(teamId) {
 function r5BeginTurnTimer() {
   if (!state.r5.awaitingStart) return false;
   state.r5.awaitingStart = false;
+  // 下一队开始作答 = 上一队的答案框功成身退。
+  // 它的展示窗口正好是「X队答题正确得N分。下面请Y队答题」这句播报的时长，
+  // 全场一边听一边看着那句答案，念完即撤 —— 不会挂着干扰下一队。
+  state.r5.lastAccepted = null;
   startTimer(state.r5.timerSec * 1000, 5);   // 内部会 save
   return true;
 }
@@ -2318,9 +2325,9 @@ function _r5NextTurn() {
   }
   state.r5.currentTurnIdx   = next;
   state.r5.currentMemberIdx = null;      // 换人作答 → 队员重选
-  // 不清 lastAccepted：轮次推进就发生在 r5ValidAnswer 末尾，清了刚判有效的
-  // 那条答案就永远显示不出来。而且让上一条留在屏上，下一队正好能避开重复。
-  // 真正的清空点在换令题时（见 r5RevealTheme 调用的 _r5ResetTheme）。
+  // 不在这里清 lastAccepted：轮次推进就发生在 r5ValidAnswer 末尾，
+  // 在这清会让刚判有效的那条答案根本没机会显示。
+  // 它的撤场点在 r5BeginTurnTimer()——下一队真正开表的那一刻。
   state.r5.turnPulse = (state.r5.turnPulse || 0) + 1;
   // 这里【只推进轮次，不起表】。表要等「X队答题正确得N分。下面请Y队答题，开始答题」
   // 这句念完再起 —— 和 ①②④ 完全一致（见 r1ReadQ / r2ReadQ / r4ReadQ）。
