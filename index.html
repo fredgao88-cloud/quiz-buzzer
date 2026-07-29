@@ -622,26 +622,35 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
           <input type="file" id="logo-file" accept="image/*" style="display:none" onchange="loadLogo(this)">
         </div>
       </div>
-      <div class="row" style="margin-top:10px;align-items:flex-start">
-        <div>
+      <div style="margin-top:12px;font-size:12px;color:var(--muted);line-height:1.8">
+        背景图<b>填文件路径</b>，不再上传 —— 上传会把整张图以 base64 塞进浏览器存储，
+        localStorage 每个域名只有约 5MB，两三张照片就能撑爆，
+        <b style="color:var(--yellow)">撑爆后连分数都存不进去</b>。
+        把图片放进项目的 <code>images/</code> 目录，这里填相对路径即可（如 <code>images/赛前背景.jpg</code>）。
+      </div>
+      <div class="row" style="margin-top:8px;align-items:flex-start">
+        <div style="flex:1">
           <label>赛前背景图（空场时整屏铺满）</label>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
-            <button class="btn-ghost btn-sm" onclick="document.getElementById('prepbg-file').click()">上传</button>
-            <button class="btn-ghost btn-sm" id="prepbg-clear" onclick="clearPrepBg()" style="display:none">清除</button>
-            <input type="file" id="prepbg-file" accept="image/*" style="display:none" onchange="loadPrepBg(this)">
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap">
+            <input type="text" id="s-prepbg-path" style="width:260px" placeholder="images/赛前背景.jpg"
+                   onchange="setBgPath('prep', this.value)">
+            <button class="btn-ghost btn-sm" onclick="fillBgPath('prep')">用默认名</button>
+            <button class="btn-ghost btn-sm" onclick="setBgPath('prep','')">清除</button>
             <img id="prepbg-preview" style="display:none;height:44px;border-radius:6px;border:1px solid var(--border,#1e3a5f);object-fit:cover">
+            <span id="prepbg-hint" style="font-size:11px"></span>
           </div>
         </div>
       </div>
       <div class="row" style="margin-top:10px;align-items:flex-start">
-        <div>
+        <div style="flex:1">
           <label>题目背景图（出题/翻牌等界面底图）</label>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
-            <button class="btn-ghost btn-sm" onclick="document.getElementById('qbg-file').click()">上传</button>
-            <button class="btn-ghost btn-sm" id="qbg-clear" onclick="clearQuestionBg()" style="display:none">清除</button>
-            <input type="file" id="qbg-file" accept="image/*" style="display:none" onchange="loadQuestionBg(this)">
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap">
+            <input type="text" id="s-qbg-path" style="width:260px" placeholder="images/题目背景.jpg"
+                   onchange="setBgPath('question', this.value)">
+            <button class="btn-ghost btn-sm" onclick="fillBgPath('question')">用默认名</button>
+            <button class="btn-ghost btn-sm" onclick="setBgPath('question','')">清除</button>
             <img id="qbg-preview" style="display:none;height:44px;border-radius:6px;border:1px solid var(--border,#1e3a5f);object-fit:cover">
-            <span style="font-size:11px;color:var(--muted)">留空则用默认深色底</span>
+            <span id="qbg-hint" style="font-size:11px"></span>
           </div>
         </div>
       </div>
@@ -3845,8 +3854,7 @@ function openSettings(tab) {
   document.getElementById('s-rate-val').textContent = `×${state.tts.rate||1}`;
   document.getElementById('s-brand').value        = state.brandName || '';
   // 抽题/倒计时/计分/规则/键位/场景图 都在各环节页里，由 renderSettingsTabs() 按当前页生成
-  refreshPrepBgUI();
-  refreshQuestionBgUI();
+  refreshBgUI();
   document.getElementById('s-tts-engine').value  = state.tts.engine || 'auto';
   document.getElementById('s-tts-url').value     = state.tts.serverUrl || '';
   refreshTTSStatus();
@@ -3935,39 +3943,57 @@ function loadLogo(input) {
   r.onload=e=>{setLogo(e.target.result);render();};
   r.readAsDataURL(f);
 }
-function loadPrepBg(input) {
-  const f=input.files[0]; if(!f) return;
-  const r=new FileReader();
-  r.onload=e=>{setPrepBg(e.target.result);refreshPrepBgUI();render();};
-  r.readAsDataURL(f);
-  input.value='';
+// ── 背景图：填路径，不上传 ────────────────────────
+// 上传会把整张图以 base64 存进 localStorage（每域名约 5MB），两三张照片就能撑爆，
+// 撑爆后 setItem 抛异常、连分数都存不进去。改为只存一个相对路径，
+// 图片本体放 images/ 目录 —— 和第四环节场景图同一套做法。
+// 旧存档里存的是 data: 开头的内嵌图，仍能正常显示，界面会提示改用路径。
+
+const BG_DEFAULT_PATH = { prep: 'images/赛前背景.jpg', question: 'images/题目背景.jpg' };
+
+function setBgPath(which, path) {
+  const v = (path || '').trim();
+  if (which === 'prep') setPrepBg(v || null);
+  else                  setQuestionBg(v || null);
+  refreshBgUI();
+  render();
 }
-function clearPrepBg() {
-  setPrepBg(null); refreshPrepBgUI(); render();
-}
-function refreshPrepBgUI() {
-  const prev=document.getElementById('prepbg-preview');
-  const clr=document.getElementById('prepbg-clear');
-  if (!prev) return;
-  if (state.prepBg) { prev.src=state.prepBg; prev.style.display=''; clr.style.display=''; }
-  else { prev.removeAttribute('src'); prev.style.display='none'; clr.style.display='none'; }
-}
-function loadQuestionBg(input) {
-  const f=input.files[0]; if(!f) return;
-  const r=new FileReader();
-  r.onload=e=>{setQuestionBg(e.target.result);refreshQuestionBgUI();render();};
-  r.readAsDataURL(f);
-  input.value='';
-}
-function clearQuestionBg() {
-  setQuestionBg(null); refreshQuestionBgUI(); render();
-}
-function refreshQuestionBgUI() {
-  const prev=document.getElementById('qbg-preview');
-  const clr=document.getElementById('qbg-clear');
-  if (!prev) return;
-  if (state.questionBg) { prev.src=state.questionBg; prev.style.display=''; clr.style.display=''; }
-  else { prev.removeAttribute('src'); prev.style.display='none'; clr.style.display='none'; }
+function fillBgPath(which) { setBgPath(which, BG_DEFAULT_PATH[which]); }
+
+/** 回显两张背景图的路径、缩略图与可用性（文件在不在） */
+function refreshBgUI() {
+  [['prep', 's-prepbg-path', 'prepbg-preview', 'prepbg-hint', state.prepBg],
+   ['question', 's-qbg-path', 'qbg-preview',   'qbg-hint',    state.questionBg]
+  ].forEach(([which, inputId, prevId, hintId, val]) => {
+    const inp = document.getElementById(inputId);
+    if (!inp) return;                       // 不在设置页
+    const prev = document.getElementById(prevId);
+    const hint = document.getElementById(hintId);
+    const isData = typeof val === 'string' && val.startsWith('data:');
+    inp.value = isData ? '' : (val || '');
+    if (!val) {
+      prev.style.display = 'none';
+      hint.textContent = '未设置，用默认深色底';
+      hint.style.color = 'var(--muted)';
+      return;
+    }
+    if (isData) {
+      prev.src = val; prev.style.display = '';
+      hint.textContent = '当前是上传的内嵌图片，占用浏览器存储 —— 建议改放 images/ 目录并填路径';
+      hint.style.color = 'var(--yellow)';
+      return;
+    }
+    // 路径：实测能不能加载，赛前最容易漏的就是图没拷进 images/
+    hint.textContent = '检测中…'; hint.style.color = 'var(--muted)';
+    const im = new Image();
+    im.onload  = () => { prev.src = val; prev.style.display = '';
+                         hint.textContent = `图片 ✓ ${im.naturalWidth}×${im.naturalHeight}`;
+                         hint.style.color = 'var(--green)'; };
+    im.onerror = () => { prev.style.display = 'none';
+                         hint.textContent = '找不到该文件，请确认已放入 images/ 目录';
+                         hint.style.color = 'var(--red)'; };
+    im.src = val;
+  });
 }
 
 // ── 各环节抽题配置（个人必答 / 团队共答 / 擂台抢答 通用）──────────
