@@ -4188,10 +4188,13 @@ speechSynthesis.onvoiceschanged = () => {
       if (!d || d.id === myId) return;
       if (d.type === 'control-hello') { hb.postMessage({ type:'control-ack', id: myId }); warn(); }
       else if (d.type === 'control-ack') warn();
-      // 兜底探测，比握手可靠：大屏页只读状态、从不 save()，因此从不广播 'state'；
-      // BroadcastChannel 又不会把消息发回给发送者。所以收到 'state' 就只有一个解释——
-      // 另有一个控制台在写状态。这条对「还跑着旧代码、不会应答握手」的页面同样有效。
-      else if (d.type === 'state') warn();
+      // 兜底探测：大屏页只读状态、从不 save()，因此从不广播 'state'，
+      // 所以收到别的页面发来的 'state' 就只有一个解释 —— 另有一个控制台在写状态。
+      // ⚠️ 必须比对 from：BroadcastChannel 会把消息送达【同一页面里的其他实例】，
+      // 本页 shared.js 的 bc 一 save() 就会让这个检测器收到自己的广播。
+      // 早先漏了这一步，结果只要操作一下就误报「检测到多个控制台」。
+      // from 缺失（对方跑着旧代码）时宁可不报，也不能误报。
+      else if (d.type === 'state' && d.from && d.from !== PAGE_ID) warn();
       // 大屏报上来的代码版本：不一致说明它还跑着旧代码
       else if (d.type === 'build' && d.build !== APP_BUILD) {
         const el = document.getElementById('stale-display-warn');

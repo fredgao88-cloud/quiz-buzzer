@@ -20,7 +20,14 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-29.3';
+const APP_BUILD = '2026-07-29.4';
+
+// 本页面实例的唯一标识，随广播一起发出。
+// 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
+// 只有发送者自己那个对象收不到。控制台页有两个实例（shared.js 的 bc 用来广播状态，
+// index.html 的检测器另开一个），所以自己 save() 时自己的检测器也会收到那条消息。
+// 靠消息类型分不出「别的页面发的」还是「自己发的」，必须带上身份。
+const PAGE_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
 
 const TEAM_COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7'];
 
@@ -486,7 +493,8 @@ function save(broadcast = true) {
   // 正在应用远端快照时，监听器里顺带触发的 save 不再广播出去：
   // 那等于把刚收到的东西原样弹回对端，白白放大回声（有版本号后不会出错，但没必要）
   if (broadcast && bc && !_applyingRemote) {
-    try { bc.postMessage({ type: 'state', state }); } catch(e) {}
+    // 带上 from：收听方据此分辨是别的页面发的，还是自己页面里另一个实例发的
+    try { bc.postMessage({ type: 'state', state, from: PAGE_ID }); } catch(e) {}
   }
   listeners.forEach(fn => fn());
 }
