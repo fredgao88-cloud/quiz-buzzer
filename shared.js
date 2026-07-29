@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-28.17';
+const APP_BUILD = '2026-07-29.3';
 
 const TEAM_COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7'];
 
@@ -224,6 +224,8 @@ function defaultState() {
       timerSec:        10,
       usedAnswers:     [],   // 本令题已用有效答案
       themeWinners:    [],   // 每令题擂主 teamId
+      turnPulse:       0,    // 轮次自增计数。控制台据此判断「该报下一位了」——
+                             // 同一队一轮里会被轮到多次，光比队号会漏报
       isTiebreak:      false,// 当前令题是否为并列加赛（只有并列队参加）
     },
 
@@ -2080,6 +2082,7 @@ function r5StartTheme(themeIdx) {
   state.r5.activeTeams     = [...state.r5.teamOrder];
   state.r5.usedAnswers     = [];
   state.r5.isTiebreak      = false;
+  state.r5.turnPulse       = (state.r5.turnPulse || 0) + 1;
   save();
 }
 
@@ -2102,6 +2105,7 @@ function r5StartTiebreak(themeIdx, rank = 1) {
   state.r5.activeTeams     = [...state.r5.teamOrder];
   state.r5.usedAnswers     = [];
   state.r5.isTiebreak      = true;
+  state.r5.turnPulse       = (state.r5.turnPulse || 0) + 1;
   state.showScoresOnDisplay = false;
   save();
   return true;
@@ -2176,9 +2180,13 @@ function r5ValidAnswer(teamId, answer, opts = {}) {
     correct: true, delta: gained, reason: 'flower_valid',
     answer, ts: Date.now(),
   };
-  logEvent(event);
+  // skipAnnounce：自己播，播完才推进轮次。否则 _r5NextTurn 触发的
+  // 「请某队作答」会立刻把「某队有效得一分」掐断（speak 会打断前一句）
+  logEvent(event, true);
   state.showScoresOnDisplay = true;   // 每答对一条就及时把记分牌亮出来
-  _r5NextTurn();
+  const after = () => _r5NextTurn();
+  if (window.IS_CONTROL) announceScore(event, after);
+  else after();
   return event;
 }
 
@@ -2198,13 +2206,13 @@ function r5Eliminate(teamId) {
   logEvent(event, true);
   state.showScoresOnDisplay = true;   // 出局也是一次战况变化，记分牌同步亮出来
   save();
-  if (window.IS_CONTROL) speak(`${team.name}出局`);
-  // 检查是否只剩一队（擂主）
-  if (state.r5.activeTeams.length === 1) {
-    r5SetWinner(state.r5.activeTeams[0]);
-  } else {
-    _r5NextTurn();
-  }
+  // 「某队出局」要播完再推进，否则紧跟着的「请某队作答」会把它掐掉
+  const after = () => {
+    if (state.r5.activeTeams.length === 1) r5SetWinner(state.r5.activeTeams[0]);  // 只剩一队＝擂主
+    else _r5NextTurn();
+  };
+  if (window.IS_CONTROL) speak(`${team.name}出局`, { onend: after });
+  else after();
   return event;
 }
 
@@ -2240,8 +2248,11 @@ function _r5NextTurn() {
     guard++;
   }
   state.r5.currentTurnIdx = next;
+  state.r5.turnPulse = (state.r5.turnPulse || 0) + 1;
   save();
-  startTimer(state.r5.timerSec * 1000, 5);
+  // 计时【不在这里起】：先由控制台报「请某队作答」，播完才起 ——
+  // 否则播报那两三秒算进 10 秒作答时间里，轮到谁谁吃亏。
+  // 见 index.html 的 r5AnnounceTurnIfNeeded()
 }
 
 // =====================================================

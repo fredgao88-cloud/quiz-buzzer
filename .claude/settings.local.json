@@ -45,7 +45,12 @@
       "Bash(rm -f .t2.js)",
       "Bash(sed -i \"s/const APP_BUILD = '2026-07-28.12';/const APP_BUILD = '2026-07-28.13';/\" shared.js)",
       "Bash(sed -i \"s/const APP_BUILD = '2026-07-28.13';/const APP_BUILD = '2026-07-28.14';/\" shared.js)",
-      "Bash(sed -i \"s/const APP_BUILD = '2026-07-28.15';/const APP_BUILD = '2026-07-28.16';/\" shared.js)"
+      "Bash(sed -i \"s/const APP_BUILD = '2026-07-28.15';/const APP_BUILD = '2026-07-28.16';/\" shared.js)",
+      "Bash(sed -i \"s/const APP_BUILD = '2026-07-28.16';/const APP_BUILD = '2026-07-28.17';/\" shared.js)",
+      "Bash(sed -i \"s/const APP_BUILD = '2026-07-28.17';/const APP_BUILD = '2026-07-29.1';/\" shared.js)",
+      "Bash(grep -vE \"^\\\\S+:[0-9]+: *\\(//|\\\\*\\)\")",
+      "Bash(sed -i \"s/const APP_BUILD = '2026-07-29.1';/const APP_BUILD = '2026-07-29.2';/\" shared.js)",
+      "Bash(sed -i \"s/const APP_BUILD = '2026-07-29.2';/const APP_BUILD = '2026-07-29.3';/\" shared.js)"
     ]
   }
 }

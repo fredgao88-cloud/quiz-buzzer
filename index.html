@@ -70,6 +70,10 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
 .team-name{font-weight:700;font-size:14px;margin-bottom:4px}
 .team-score-big{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
 .team-sub{font-size:11px;color:var(--muted);margin-top:3px}
+/* 前置条件没满足被踢回赛前准备时，把该去操作的那张卡闪一下。
+   只弹 alert 不够 —— 弹窗一闪而过，人只看到「莫名其妙跳回赛前准备」。 */
+@keyframes need-attention{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,0)}30%{box-shadow:0 0 0 3px rgba(245,158,11,.85)}}
+.need-attention{animation:need-attention 1s ease-in-out 3}
 .member-btn{padding:4px 8px;border-radius:5px;font-size:12px;background:var(--surface);border:1px solid var(--border);color:var(--text);cursor:pointer;transition:all .15s}
 .member-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 .member-btn:hover:not(.active){background:var(--border)}
@@ -246,7 +250,7 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     <div class="card-title">总分排名</div>
     <div id="p0-ranking" class="teams-grid"></div>
   </div>
-  <div class="card">
+  <div class="card" id="p0-order-card">
     <div class="card-title">出场顺序 <span class="pill" id="p0-order-status">未排列</span></div>
     <div id="p0-order-hint" style="font-size:12px;color:var(--muted);margin-bottom:2px"></div>
     <div id="p0-order-disp" class="draw-order-row"></div>
@@ -267,7 +271,7 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     </div>
     <div id="p0-member-scores"></div>
   </div>
-  <div class="card">
+  <div class="card" id="p0-qbank-card">
     <div class="card-title">题库</div>
     <div id="p0-qstats" class="row" style="margin-bottom:8px"></div>
     <div class="row">
@@ -1999,15 +2003,31 @@ function loadQFile(input) {
  * 为什么必须有：此前题库未导入时，initCardDeck() 会造出「displayMode=cardflip
  * 但 cards=[]」的矛盾状态，大屏静默显示"等待出题"，主持人在台上无从判断。
  */
+/** 把某张卡片闪三下并滚到可视区，指明「该操作的是这里」 */
+function flashAttention(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('need-attention');
+  void el.offsetWidth;                 // 强制重排，让动画能重复触发
+  el.classList.add('need-attention');
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
 function requireReady(round, opts = {}) {
   if (opts.needDraw !== false && !state.draw.teamOrder.length) {
-    alert('请先完成出场顺序抽签。\n\n位置：赛前准备面板 → [抽签]');
     switchPanel(0);
+    flashAttention('p0-order-card');
+    alert('请先完成出场顺序抽签 —— 本环节要按出场顺序轮转。\n\n'
+        + '已跳到「赛前准备」，闪烁的那张卡就是「出场顺序」：\n'
+        + '点【开始排列】后拖动排序，或点【随机排列】。');
     return false;
   }
   if (!state.questions.length) {
-    alert('尚未导入题库，无法开始本环节。\n\n位置：赛前准备面板 → [导入题库 JSON]\n选择项目目录下的 questions.json');
     switchPanel(0);
+    flashAttention('p0-qbank-card');
+    alert('尚未导入题库，无法开始本环节。\n\n'
+        + '已跳到「赛前准备」，闪烁的那张卡就是「题库」：\n'
+        + '点【导入题库 JSON】选择题库文件。');
     return false;
   }
   const n = countQuestions(round);
@@ -2171,7 +2191,7 @@ function r1AnnounceFlipPromptIfNeeded() {
         if (state.r1.currentQIdx != null) return;
         _r1FlipPhase = 'open';                                   // ← 开闸，现在才允许翻牌
         const sec = state.r1.flipTimerSec;
-        if (sec > 0) { startTimer(sec * 1000, 1); cdSpoken.clear(); }  // 设 0 = 不计时，闸门就一直开着
+        if (sec > 0) { cdSpoken.clear(); startTimer(sec * 1000, 1); }  // 设 0 = 不计时，闸门就一直开着
         render();
       },
     });
@@ -2402,7 +2422,7 @@ function r1NextSubQuestion() {
   state.showAnswerOnDisplay = false;
   state.showScoresOnDisplay = false;
   save(); render();
-  if (state.tts.autoRead) r1ReadQ(); else { startTimer(state.r1.timerSec * 1000, 1); cdSpoken.clear(); }
+  if (state.tts.autoRead) r1ReadQ(); else { cdSpoken.clear(); startTimer(state.r1.timerSec * 1000, 1); }
 }
 
 function r1InitDeck() { initCardDeck(1); render(); }
@@ -2476,14 +2496,14 @@ function doFlipCard(id) {
     }
     confirmFlip(id);
     if (round === 1) {
-      if (state.tts.autoRead) r1ReadQ(); else { startTimer(state.r1.timerSec*1000, 1); cdSpoken.clear(); }
+      if (state.tts.autoRead) r1ReadQ(); else { cdSpoken.clear(); startTimer(state.r1.timerSec*1000, 1); }
     } else if (round === 2) {
       r2BeginTurn();   // 翻牌上场 → 开始本队整轮（内部读题+计时）
     } else if (round === 4) {
       // 与 R1 同一个开关：自动朗读开着就读题+「开始答题」后再起计时，
       // 关掉则直接起计时（主持人自己念）
       if (state.tts.autoRead) r4ReadQ();
-      else { startTimer(state.r4.timerSec*1000, 4); cdSpoken.clear(); }
+      else { cdSpoken.clear(); startTimer(state.r4.timerSec*1000, 4); }
     }
     render();
   }, 1500);
@@ -2594,7 +2614,7 @@ function r2AnnounceFlipPromptIfNeeded() {
         if (state.r2.currentQIdx != null) return;
         _r2FlipPhase = 'open';                                   // ← 开闸
         const sec = state.r2.flipTimerSec;
-        if (sec > 0) { startTimer(sec * 1000, 2); cdSpoken.clear(); }  // 0 = 不计时，闸门一直开着
+        if (sec > 0) { cdSpoken.clear(); startTimer(sec * 1000, 2); }  // 0 = 不计时，闸门一直开着
         render();
       },
     });
@@ -2640,7 +2660,7 @@ function r2BeginTurn() {
   state.displayMode = 'question';
   save(); render();
   if (state.tts.autoRead) r2ReadQ();
-  else { startTimer(state.r2.timerSec*1000, 2); cdSpoken.clear(); }
+  else { cdSpoken.clear(); startTimer(state.r2.timerSec*1000, 2); }
 }
 
 // 本题判分（多选点选项经 autoJudge→两段式后调用；填空/超时走「判对/判错」按钮）
@@ -2700,7 +2720,7 @@ function r2AfterQuestion() {
     state.showScoresOnDisplay = false;
     save(); render();
     if (state.tts.autoRead) r2ReadQ();
-    else { startTimer(state.r2.timerSec*1000, 2); cdSpoken.clear(); }
+    else { cdSpoken.clear(); startTimer(state.r2.timerSec*1000, 2); }
   } else {
     r2TurnSummary();
   }
@@ -2986,7 +3006,7 @@ function r4Next() {
     speakRoundSummary(4, () => alert('识图找茬全部完成！'));
   }
 }
-function r4StartTimer() { startTimer(state.r4.timerSec*1000, 4); cdSpoken.clear(); }
+function r4StartTimer() { cdSpoken.clear(); startTimer(state.r4.timerSec*1000, 4); }
 /** 选/取消代表本队指认的队员。点已选中的那个＝取消，因为这一项本就是可选的 */
 function r4SetMem(i) {
   state.r4.currentMemberIdx = (state.r4.currentMemberIdx === i) ? null : i;
@@ -3069,11 +3089,60 @@ function r5Init() {
 }
 // 「出题」= 揭晓令题：先翻单卡动画，动画播完才真正切令题、报出题目、起计时。
 function r5RevealTheme(i) {
+  // 挡板必须在 playTurnCardFlip【之前】立起来：它翻完牌是先 save() 再调回调，
+  // 那次 save 会把 displayMode 切成 'question' 并触发监听 —— 挡板若放在回调里，
+  // 「请某队作答」就会抢在「本题令题」前面念出去。
+  _r5ThemeIntro = true;
   playTurnCardFlip(5, () => {
     r5StartTheme(i);
-    startTimer(state.r5.timerSec * 1000, 5);
-    cdSpoken.clear();
+    r5SpeakTheme();
   });
+}
+
+// ── R5 播报：令题 → 轮到谁 → 起计时 ──────────────────
+// 原先揭晓令题和轮转都不出声，选手只能靠主持人自己喊，轮到谁全场经常是懵的。
+// 这里对齐①②④的做法：先报内容，报完才起计时（播报时间不算进作答时间）。
+let _r5ThemeIntro   = false;   // 正在念令题，此时先不报轮次
+let _r5LastTurnPulse = null;   // 已报过的轮次序号，防重复播报
+
+/** 揭晓令题：念「本题令题，XXX」，念完接着报第一位 */
+function r5SpeakTheme() {
+  const themes = state.questions.filter(q => q.round === 5 && q.type === 'theme');
+  const t = themes[state.r5.currentThemeIdx];
+  _r5LastTurnPulse = null;                 // 新令题，第一位要重新报
+  const done = () => { _r5ThemeIntro = false; r5AnnounceTurnIfNeeded(); };
+  if (t) speak(`本题令题，${t.stem}`, { onend: done });
+  else   done();
+}
+
+/**
+ * 报「请某队作答」，播完才起计时。做成响应式（同①②④）：
+ * 不论是判有效、判出局还是评委裁定推进的轮次，只要 turnPulse 变了就报一次。
+ * 用 turnPulse 而不是队号去重 —— 同一队在一轮里会被轮到多次，比队号会漏报。
+ */
+function r5AnnounceTurnIfNeeded() {
+  if (!window.IS_CONTROL) return;
+  if (state.currentRound !== 5) { _r5LastTurnPulse = null; return; }
+  if (_r5ThemeIntro) return;                          // 令题还在念
+  if (state.displayMode === 'turncard') return;       // 令题还没揭晓
+  const order  = state.r5.teamOrder || [];
+  const active = state.r5.activeTeams || [];
+  const tid    = order[state.r5.currentTurnIdx];
+  if (tid == null || !active.includes(tid)) return;
+  if (active.length <= 1) return;                     // 已剩擂主，不必再催
+  const pulse = state.r5.turnPulse || 0;
+  if (_r5LastTurnPulse === pulse) return;
+  _r5LastTurnPulse = pulse;
+  const team = getTeam(tid);
+  if (!team) return;
+  // ⚠️ cdSpoken.clear() 必须在 startTimer【之前】：startTimer 内部会 save()，
+  // 那一步同步跑完 render→renderTimer，10 秒表刚起就命中「念 10」并记进 cdSpoken；
+  // 清在后面正好把刚记下的抹掉，下一帧又念一次「10」。全项目已统一成这个顺序。
+  speak(`请${team.name}作答`, { onend: () => {
+    if (state.currentRound !== 5) return;             // 期间已切走环节
+    cdSpoken.clear();
+    startTimer(state.r5.timerSec * 1000, 5);
+  }});
 }
 function r5SetTheme(i) { r5RevealTheme(i); }
 function r5NextTheme() {
@@ -3111,13 +3180,13 @@ function r5DoValid(teamId) {
       r5Eliminate(teamId);
     } else {
       r5ValidAnswer(teamId, text, { force: true });   // 评委裁定：强制通过
-      startTimer(state.r5.timerSec*1000, 5); cdSpoken.clear();
+      // 计时由「请某队作答」播完后统一起，见 r5AnnounceTurnIfNeeded
     }
     render();
     return;
   }
 
-  startTimer(state.r5.timerSec*1000, 5); cdSpoken.clear(); render();
+  render();   // 计时由「请某队作答」播完后统一起
 }
 function r5DoElim(teamId) { r5Eliminate(teamId); render(); }
 /**
@@ -3134,7 +3203,7 @@ function r5PickAnswer(answer) {
   const r = r5ValidAnswer(curId, answer);
   if (!r) return;
   if (r.duplicate) { alert('这条参考答案刚被占用了，请换一条或点【出局】。'); render(); return; }
-  startTimer(state.r5.timerSec * 1000, 5); cdSpoken.clear(); render();
+  render();   // 计时由「请某队作答」播完后统一起
 }
 function r5ManualWinner() {
   const active = state.r5.activeTeams || [];
@@ -4142,11 +4211,13 @@ onChange(announceRulesIfNeeded);   // 进入翻牌选题时自动朗读环节规
 onChange(r1AnnounceFlipPromptIfNeeded);   // 个人必答：等待翻牌时报「请某队队员某某翻牌」
 onChange(r2AnnounceFlipPromptIfNeeded);   // 团队共答：等待翻牌时报「请某队翻牌」（不带队员名）
 onChange(r4AnnounceFlipPromptIfNeeded);   // 识图找茬：等待翻牌时报「请某队开始选题」
+onChange(r5AnnounceTurnIfNeeded);         // 服务飞花令：轮次变化时报「请某队作答」
 render();
 announceRulesIfNeeded();           // 覆盖「刷新后已处于翻牌选题」的情形
 r1AnnounceFlipPromptIfNeeded();    // 同上：刷新后若正等着翻牌，补报一次
 r2AnnounceFlipPromptIfNeeded();
 r4AnnounceFlipPromptIfNeeded();
+r5AnnounceTurnIfNeeded();
 
 // ── 题库自动加载 ─────────────────────────────────
 // 题库为空时自动拉取同目录的 questions.json，省去每次手动导入。
