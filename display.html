@@ -240,6 +240,13 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 #flower-theme{font-size:clamp(32px,4vw,58px);font-weight:800;color:var(--accent);margin-bottom:10px;letter-spacing:1px;text-shadow:0 3px 12px rgba(0,0,0,.9),0 0 26px rgba(0,0,0,.65)}
 #flower-turn{font-size:clamp(26px,3.2vw,46px);font-weight:800;padding:18px 52px;border-radius:16px;border:4px solid var(--green);color:var(--green);background:#14532dcc;animation:pulse-glow-g 1.2s ease-in-out infinite}
 #flower-used{font-size:clamp(20px,2.4vw,34px);color:var(--text);max-width:min(90vw,1400px);text-align:center;line-height:2;text-shadow:0 1px 6px rgba(0,0,0,.85)}
+/* 刚被判有效的那条答案 —— 手工录入的（评委现场认可、参考清单里没有的）
+   全场只能靠这块看到内容，所以给足字号 */
+#flower-accepted{font-size:clamp(24px,3vw,42px);font-weight:800;padding:14px 40px;border-radius:14px;
+  border:3px solid var(--green);color:#dcfce7;background:#14532dd9;max-width:min(90vw,1400px);
+  text-align:center;line-height:1.4;text-shadow:0 2px 8px rgba(0,0,0,.85)}
+#flower-accepted .tag{font-size:.68em;font-weight:700;color:var(--yellow);margin-left:14px;
+  border:2px solid var(--yellow);border-radius:8px;padding:2px 10px;vertical-align:middle}
 #flower-used-label{font-size:clamp(17px,1.9vw,28px);color:var(--muted);text-shadow:0 1px 6px rgba(0,0,0,.85)}
 
 /* 全屏无题提示 */
@@ -364,6 +371,7 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 <div id="flower-area">
   <div id="flower-theme"></div>
   <div id="flower-turn"></div>
+  <div id="flower-accepted"></div>
   <div id="flower-used-label" style="margin-top:8px">已用答案：</div>
   <div id="flower-used"></div>
 </div>
@@ -1025,6 +1033,24 @@ function updateFlowerArea() {
   } else {
     turnEl.textContent = '';
     turnEl.style.cssText = '';
+  }
+
+  // 刚判有效的那条：整句亮出来。参考清单里点选的也显示，但手工录入的才是刚需 ——
+  // 那种内容只存在于操作员刚敲进去的字符串里，不显示就等于没发生过。
+  const acc   = state.r5.lastAccepted;
+  const accEl = document.getElementById('flower-accepted');
+  if (acc && acc.answer) {
+    const t = state.teams.find(x => x.id === acc.teamId);
+    const c = t ? tColor(t) : 'var(--green)';
+    accEl.style.borderColor = c;
+    accEl.innerHTML = `<span style="color:${c}">${escapeHtml(t ? t.name : '')}</span>`
+      + (acc.memberName ? ` · ${escapeHtml(acc.memberName)}` : '')
+      + `：${escapeHtml(acc.answer)}`
+      + (acc.manual ? `<span class="tag">评委认可</span>` : '');
+    accEl.style.display = '';
+  } else {
+    accEl.innerHTML = '';
+    accEl.style.display = 'none';
   }
 
   const used = state.r5.usedAnswers || [];

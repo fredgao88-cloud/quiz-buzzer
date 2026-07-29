@@ -544,6 +544,13 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     <div id="r5-member-box" style="display:none;margin-top:6px">
       <div id="r5-member-hint" style="font-size:12px;color:var(--muted);margin-bottom:4px"></div>
       <div id="r5-member-btns" class="row"></div>
+      <!-- 判定：参考答案点不到的走【手工录入】，答错/说不出走【判错·出局】 -->
+      <div class="row" style="margin-top:8px">
+        <button class="btn-success" onclick="r5ManualValid()"
+                title="参考答案里没有、但评委现场认可 —— 手工录入内容，计有效分并显示在大屏上">✓ 手工录入有效答案</button>
+        <button class="btn-danger" onclick="r5ElimCurrent()"
+                title="答错、重复、或限时内答不出 —— 判该队出局">✗ 判错 · 出局</button>
+      </div>
     </div>
     <div id="r5-team-rows" style="margin-top:8px"></div>
     <div class="row" style="margin-top:10px">
@@ -992,11 +999,14 @@ function onTimerExpired(round) {
       speak('时间到，本队找茬结束');
       break;
     case 5: {
-      // 飞花令超时：当前队出局
+      // 飞花令超时：当前队出局。⚠️ 判定同步做，不挂在语音回调上 ——
+      // 语音一被打断回调就丢，那样会出现「念了时间到但队伍还站着」的死局。
       const order = state.r5.teamOrder || [];
       const tid = order[state.r5.currentTurnIdx];
       if (tid != null && (state.r5.activeTeams || []).includes(tid)) {
-        speakQueue(['时间到'], () => { r5Eliminate(tid); render(); });
+        const t = getTeam(tid);
+        r5Eliminate(tid);                       // 内部已同步推进轮次并起新表
+        r5SpeakResultAndTurn(`时间到，${t?.name || ''}出局`);
       }
       break;
     }
@@ -1617,15 +1627,18 @@ function renderP5() {
         .join('');
       document.getElementById('r5-member-hint').innerHTML = mIdx != null
         ? `本轮作答：<b style="color:${c}">${escapeHtml(curT.name)} · ${escapeHtml(curT.members[mIdx]||'')}</b>`
-        : `<span style="color:var(--red);font-weight:700">← 请先选择 ${escapeHtml(curT.name)} 本轮作答的队员</span>`;
+          + `　<span style="color:var(--yellow)">⏸ 已停表，请从下方参考答案中点选；`
+          + `列表里没有但评委认可 → 点【手工录入】；答错/说不出 → 点【判错·出局】</span>`
+        : `<span style="color:var(--red);font-weight:700">← 请先选择 ${escapeHtml(curT.name)} 本轮作答的队员（选中即停表，不再倒计时）</span>`;
     }
   }
 
   const banner = document.getElementById('r5-turn-banner');
   if (curT && active.includes(curId)) {
     const c = tColor(curT);
-    banner.textContent = `轮到：${curT.name}`;
-    banner.className = 'buzz-banner buzz-armed anim-pulse';
+    const judging = state.r5.currentMemberIdx != null;
+    banner.textContent = judging ? `${curT.name} 作答中 · 已停表，等待判定` : `轮到：${curT.name}`;
+    banner.className = 'buzz-banner ' + (judging ? 'buzz-locked' : 'buzz-armed anim-pulse');
     banner.style.cssText += `;border-color:${c};color:${c}`;
   } else {
     banner.textContent = '待机';
@@ -3251,13 +3264,19 @@ function r5SpeakTheme() {
   if (segs.length) speakQueue(segs);
 }
 
-/** 一次判定之后：「结果」+「请下一队作答」连播 */
+/**
+ * 一次判定之后：「结果」+「下面请X队答题，开始答题」连播。
+ *
+ * 注意 currentTurnIdx 在调用本函数之前就已经被 _r5NextTurn() 推到下一队、
+ * 新的 10 秒表也已经起好了 —— 播报只是把已发生的状态念出来，绝不能反过来
+ * 让状态等播报（语音一被打断，挂在 onend 上的状态切换就丢了，这个坑踩过多次）。
+ */
 function r5SpeakResultAndTurn(resultText) {
   const order  = state.r5.teamOrder   || [];
   const active = state.r5.activeTeams || [];
   const tid    = order[state.r5.currentTurnIdx];
   const next   = (active.length > 1 && active.includes(tid)) ? getTeam(tid) : null;
-  const segs = [resultText, next ? `请${next.name}作答` : ''].filter(Boolean);
+  const segs = [resultText, next ? `下面请${next.name}答题，开始答题` : ''].filter(Boolean);
   if (segs.length) speakQueue(segs);
 }
 
@@ -3273,8 +3292,19 @@ function r5NextTheme() {
   }
   r5RevealTheme(ni);
 }
-/** 选择本轮作答队员。必选 —— 有效答案的分要记到具体某人头上 */
-function r5SetMem(i) { state.r5.currentMemberIdx = i; save(); render(); }
+/**
+ * 选择本轮作答队员 —— 同时【停表】。
+ *
+ * 选人这个动作意味着「这个队已经开口答了」，接下来是操作员在几十条参考答案里
+ * 找对应那条的时间。表要是还在跑，操作员翻答案的十几秒会算进选手的作答时间，
+ * 翻慢了直接把人判超时出局 —— 这就是「节奏不对」的根源。
+ * 判定完成后 _r5NextTurn() 会给下一队起一块新的满表。
+ */
+function r5SetMem(i) {
+  state.r5.currentMemberIdx = i;
+  stopTimer();          // 进入判定阶段，倒计时停摆
+  save(); render();
+}
 
 /** 判「有效」前的校验：必须先点明是谁说的，否则这一分没法记到人头上 */
 function r5RequireMember() {
@@ -3283,6 +3313,28 @@ function r5RequireMember() {
     return false;
   }
   return true;
+}
+
+/** 手工录入一条评委认可的有效答案（参考清单里没有的）。内容会显示在大屏上。 */
+function r5ManualValid() {
+  const order = state.r5.teamOrder.length ? state.r5.teamOrder : state.teams.map(t => t.id);
+  const curId = order[state.r5.currentTurnIdx];
+  if (curId == null || !(state.r5.activeTeams || []).includes(curId)) {
+    return alert('当前没有正在作答的队伍。');
+  }
+  r5DoValid(curId);
+}
+
+/** 判当前作答队伍出局（答错 / 重复 / 说不出）。不要求选队员 —— 那种情况本就没人答对。 */
+function r5ElimCurrent() {
+  const order = state.r5.teamOrder.length ? state.r5.teamOrder : state.teams.map(t => t.id);
+  const curId = order[state.r5.currentTurnIdx];
+  if (curId == null || !(state.r5.activeTeams || []).includes(curId)) {
+    return alert('当前没有正在作答的队伍。');
+  }
+  const t = getTeam(curId);
+  if (!confirm(`判 ${t?.name || ''} 出局？` + '\n\n' + '答错、重复、或限时内答不出，都算出局。')) return;
+  r5DoElim(curId);
 }
 
 function r5DoValid(teamId) {
@@ -3318,7 +3370,7 @@ function r5DoValid(teamId) {
     return;
   }
 
-  r5SpeakResultAndTurn(`${r.teamName}，有效，得到${scoreToSpeech(Math.abs(r.delta))}`);
+  r5SpeakResultAndTurn(`${r.teamName}，答题正确，得${scoreToSpeech(Math.abs(r.delta))}`);
   render();
 }
 function r5DoElim(teamId) {
@@ -3329,7 +3381,7 @@ function r5DoElim(teamId) {
   const w = (state.r5.themeWinners || []).find(x => x.themeIdx === state.r5.currentThemeIdx);
   const winnerTeam = w ? getTeam(w.teamId) : null;
   const sc = getScoreCfg('r5');
-  r5SpeakResultAndTurn(`${t?.name || ''}出局`
+  r5SpeakResultAndTurn(`${t?.name || ''}，回答错误，出局`
     + (winnerTeam ? `。${winnerTeam.name}成为本题擂主，额外得到${scoreToSpeech(Math.abs(sc.winner))}` : ''));
   render();
 }
@@ -3348,7 +3400,7 @@ function r5PickAnswer(answer) {
   const r = r5ValidAnswer(curId, answer);
   if (!r) return;
   if (r.duplicate) { alert('这条参考答案刚被占用了，请换一条或点【出局】。'); render(); return; }
-  r5SpeakResultAndTurn(`${r.teamName}，有效，得到${scoreToSpeech(Math.abs(r.delta))}`);
+  r5SpeakResultAndTurn(`${r.teamName}，答题正确，得${scoreToSpeech(Math.abs(r.delta))}`);
   render();
 }
 function r5ManualWinner() {

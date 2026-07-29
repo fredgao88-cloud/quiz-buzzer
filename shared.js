@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-29.21';
+const APP_BUILD = '2026-07-29.22';
 
 // 本页面实例的唯一标识，随广播一起发出。
 // 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
@@ -243,6 +243,9 @@ function defaultState() {
                              // 同一队一轮里会被轮到多次，光比队号会漏报
       currentMemberIdx: null,// 本轮作答的队员（必选）。每轮转一次就清空重选 ——
                              // 飞花令是队内轮着说，不同轮次很可能换人
+      // 最近一条被判有效的答案，大屏据此把内容亮出来。手工录入的（参考答案里没有、
+      // 评委现场认可的）尤其要显示 —— 否则全场只听到「有效」，不知道认的是哪句话。
+      lastAccepted:     null,// { teamId, teamName, memberName, answer, manual, ts }
       isTiebreak:      false,// 当前令题是否为并列加赛（只有并列队参加）
     },
 
@@ -2106,6 +2109,7 @@ function r5StartTheme(themeIdx) {
   state.r5.usedAnswers     = [];
   state.r5.isTiebreak      = false;
   state.r5.currentMemberIdx = null;
+  state.r5.lastAccepted     = null;   // 上一令题的答案不能挂到新令题上
   state.r5.turnPulse       = (state.r5.turnPulse || 0) + 1;
   startTimer(state.r5.timerSec * 1000, 5);   // 新令题第一位，表从头走
   save();
@@ -2131,6 +2135,7 @@ function r5StartTiebreak(themeIdx, rank = 1) {
   state.r5.usedAnswers     = [];
   state.r5.isTiebreak      = true;
   state.r5.currentMemberIdx = null;
+  state.r5.lastAccepted     = null;
   state.r5.turnPulse       = (state.r5.turnPulse || 0) + 1;
   startTimer(state.r5.timerSec * 1000, 5);
   state.showScoresOnDisplay = false;
@@ -2153,6 +2158,11 @@ function normalizeAnswer(s) {
     // 内部空白折叠后去除
     .replace(/\s+/g, '')
     .toLowerCase();
+}
+
+/** 当前正在进行的令题（没有则 null） */
+function r5CurrentTheme() {
+  return state.questions.filter(q => q.round === 5 && q.type === 'theme')[state.r5.currentThemeIdx] || null;
 }
 
 /** 该内容是否不具备可比性（空 / 未录入占位符），此类不参与查重 */
@@ -2205,6 +2215,18 @@ function r5ValidAnswer(teamId, answer, opts = {}) {
   // 个人分：这一条是谁说的就记谁头上（与①②③④一致）
   const mIdx = state.r5.currentMemberIdx;
   if (mIdx != null) team.memberScores[mIdx] = (team.memberScores[mIdx] || 0) + gained;
+  // 亮在大屏上的「刚判有效的这条」。手工录入的（参考清单里没有、评委现场认可的）
+  // 尤其要显示 —— 那种内容只存在于操作员刚敲进去的字符串里，不上屏就等于没发生过。
+  const pool   = (r5CurrentTheme()?.answerPool) || [];
+  const inPool = pool.some(a => normalizeAnswer(a) === normalizeAnswer(answer));
+  state.r5.lastAccepted = {
+    teamId: team.id, teamName: team.name,
+    memberName: (mIdx != null ? team.members[mIdx] : '') || '',
+    answer,
+    // 「评委认可」角标只给真有内容、且不在参考清单里的那种；留空占位符不算
+    manual: !inPool && !_r5NotComparable(answer),
+    ts: Date.now(),
+  };
   const event = {
     round: 5, teamId: team.id, teamName: team.name,
     memberIdx:  mIdx,
@@ -2278,6 +2300,9 @@ function _r5NextTurn() {
   }
   state.r5.currentTurnIdx   = next;
   state.r5.currentMemberIdx = null;      // 换人作答 → 队员重选
+  // 不清 lastAccepted：轮次推进就发生在 r5ValidAnswer 末尾，清了刚判有效的
+  // 那条答案就永远显示不出来。而且让上一条留在屏上，下一队正好能避开重复。
+  // 真正的清空点在换令题时（见 r5RevealTheme 调用的 _r5ResetTheme）。
   state.r5.turnPulse = (state.r5.turnPulse || 0) + 1;
   // 轮到下一队 = 表立刻从头走。
   // 曾经想「等『请某队作答』播完再开表」，好让播报时间不占作答时间 —— 结果是
