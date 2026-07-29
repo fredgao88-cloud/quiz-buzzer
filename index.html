@@ -583,12 +583,15 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
     </div>
     <div class="row" style="margin-bottom:10px">
       <button class="btn-warn btn-lg" onclick="r6Next()">🎲 随机出题</button>
-      <button class="btn-success btn-lg" onclick="r6Judge(true)">✓ 答对</button>
-      <button class="btn-danger btn-lg" onclick="r6Judge(false)">✗ 答错</button>
       <button class="btn-ghost btn-sm" onclick="r6ReadQ()" title="朗读当前题目（题干+选项）">🔊 朗读题目</button>
       <span id="r6-progress" style="color:var(--muted);font-size:12px"></span>
     </div>
     <div id="r6-q-box" class="q-box"></div>
+    <!-- 填空题没有选项可点，只能由操作员判 —— 选择题一律交给系统判，这行不出现 -->
+    <div id="r6-manual-judge" class="row" style="margin-top:10px;display:none">
+      <button class="btn-success btn-lg" onclick="r6Judge(true)">✓ 答对</button>
+      <button class="btn-danger btn-lg" onclick="r6Judge(false)">✗ 答错</button>
+    </div>
   </div>
 </div>
 
@@ -1801,6 +1804,7 @@ function submitMultiSel(elId) {
 // 点选项后揭晓正确答案前的停顿（毫秒）：先让观众看清选手选的（错则红），再揭晓
 const REVEAL_DELAY = 400;
 let _r1RevealTimer = null;
+let _r6RevealTimer = null;   // ⑥ 观众答题的两段式揭晓
 let _r1Locked = false;   // 本题判分锁：判过一次后拦住重复判分，直到下一位/翻新牌
 function r1CancelReveal() {
   if (_r1RevealTimer) { clearTimeout(_r1RevealTimer); _r1RevealTimer = null; }
@@ -1846,6 +1850,23 @@ function autoJudge(elId, selected) {
       _r2RevealTimer = null;
       if (state.currentRound === 2) doR2(correct);
     }, R2_REVEAL_DELAY);
+  } else if (elId === 'r6-q-box') {
+    // 观众答题：判定逻辑与①②③完全一致（点选项 → checkAnswer 判对错），
+    // 只是不记分。两段式揭晓 —— 先让全场看清答题者选的（错则标红），
+    // 停顿后再亮正确答案与「答对/答错」牌。
+    if (_r6RevealTimer) return;                // 揭晓过程中忽略重复点击
+    const q = state.r6.currentQIdx != null ? state.questions[state.r6.currentQIdx] : null;
+    if (!q) return;
+    const correct = checkAnswer(q, selected);
+    window[selKey] = [];
+    state.pickedAnswer        = selected.slice();
+    state.showAnswerOnDisplay = false;
+    state.r6.judged           = null;
+    save(); render();
+    _r6RevealTimer = setTimeout(() => {
+      _r6RevealTimer = null;
+      if (state.currentRound === 6) r6Judge(correct);
+    }, REVEAL_DELAY);
   } else if (elId === 'r3-q-box') {
     const q = state.r3.currentQIdx != null ? state.questions[state.r3.currentQIdx] : null;
     if (!q) return;
@@ -3486,6 +3507,8 @@ function r6Init() {
 /** 随机出下一题。抽空时明确告知，不静默失败 */
 function r6Next() {
   if (state.paused) return alert('全场已暂停，点【继续本环节】后再出题。');
+  if (_r6RevealTimer) { clearTimeout(_r6RevealTimer); _r6RevealTimer = null; }  // 撤掉上一题待揭晓
+  window['_sel_r6-q-box'] = [];      // 清掉上一题勾了一半的选项
   // 出题即开始：不在本环节就顺手切进来。走 r6Init() 而不是 initR6() ——
   // 后者只改 currentRound（大屏跟着走了），控制台却还停在上一个面板，
   // 于是「已出 N 题」和题目框都不会刷新。
@@ -3529,8 +3552,15 @@ function renderP6() {
   const j = state.r6.judged;
   document.getElementById('r6-progress').innerHTML =
     `已出 ${shown} 题`
-    + (j == null ? '' : `　<b style="color:${j ? 'var(--green)' : 'var(--red)'}">${j ? '✓ 已判答对' : '✗ 已判答错'}</b>`);
-  renderQBox('r6-q-box', state.r6.currentQIdx, false);
+    + (j == null ? '' : `　<b style="color:${j ? 'var(--green)' : 'var(--red)'}">${j ? '✓ 答对' : '✗ 答错'}</b>`);
+
+  // interactive=true：单选/判断点一下即判，多选勾完点提交，都由 checkAnswer 判对错
+  renderQBox('r6-q-box', state.r6.currentQIdx, true);
+
+  // 填空题没有选项可点，只能人工判；选择题不给手判按钮，免得绕过系统判定
+  const q  = state.r6.currentQIdx != null ? state.questions[state.r6.currentQIdx] : null;
+  const mj = document.getElementById('r6-manual-judge');
+  if (mj) mj.style.display = (q && (q.type === 'fill' || q.type === 'fill_multi')) ? '' : 'none';
 }
 
 // ── 成绩导出 ─────────────────────────────────────

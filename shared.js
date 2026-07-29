@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-29.30';
+const APP_BUILD = '2026-07-29.31';
 
 // 本页面实例的唯一标识，随广播一起发出。
 // 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
@@ -2404,7 +2404,8 @@ function r6DrawQuestion() {
   state.r6.currentQIdx      = idx >= 0 ? idx : null;
   state.r6.usedQIds.push(q.id);
   markQIdsUsed([q.id]);
-  state.r6.judged           = null;    // 新题：判定与答案都归零
+  state.r6.judged           = null;    // 新题：判定、所选、答案全部归零
+  state.pickedAnswer        = null;    // 不清的话大屏会把上一题选的选项标在新题上
   state.showAnswerOnDisplay = false;
   save();
   return q;
