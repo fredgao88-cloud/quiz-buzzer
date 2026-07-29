@@ -183,6 +183,15 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
   display:flex;align-items:center;justify-content:center;box-shadow:0 0 10px #22c55e88}
 .mk-dot.cur{background:#f59e0b;box-shadow:0 0 0 3px #f59e0b66,0 0 14px #f59e0b}
 /* settings modal */
+/* 环节结束的确认框。不能用 alert()：它会阻塞整个 JS 线程，
+   语音的异步请求根本跑不起来 —— 要么弹窗等十几秒念完才出现，要么干脆不念。
+   页面内的框不阻塞，成绩照念、框立刻出，主持人随时点确定。 */
+#round-end-overlay{position:fixed;inset:0;background:#00000099;z-index:120;display:none;align-items:center;justify-content:center}
+#round-end-overlay.open{display:flex}
+#round-end-box{background:var(--surface);border:2px solid var(--accent);border-radius:14px;padding:26px 34px;
+  max-width:560px;box-shadow:0 12px 48px rgba(0,0,0,.6);text-align:center}
+#round-end-box h3{font-size:20px;font-weight:800;color:var(--accent);margin-bottom:10px}
+#round-end-box p{font-size:13px;color:var(--muted);line-height:1.9;margin-bottom:18px;white-space:pre-line}
 #settings-overlay{position:fixed;inset:0;background:#00000088;z-index:100;display:none;align-items:center;justify-content:center}
 #settings-overlay.open{display:flex}
 #settings-modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;width:min(680px,96vw);max-height:90vh;overflow-y:auto;padding:20px}
@@ -593,6 +602,15 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
         <div id="marker-marks"></div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- 环节结束确认框（非阻塞，成绩照念） -->
+<div id="round-end-overlay">
+  <div id="round-end-box">
+    <h3 id="round-end-title"></h3>
+    <p id="round-end-msg"></p>
+    <button class="btn-primary" onclick="closeRoundEndDialog()">确定</button>
   </div>
 </div>
 
@@ -2379,7 +2397,9 @@ function r1NextAnswerer() {
     // 全员答完 → 先播环节小结（语音+计分板），播完再弹确认框，免得 modal 打断语音
     state.displayMode = 'question';
     save(); render();
-    speakRoundSummary(1, () => alert('第一环节全部完成！\n\n本环节得分已显示在大屏上。\n想逐队语音播报，点面板上的【本环节小结】。'), { silent: true });
+    speakRoundSummary(1);   // 逐队播报本环节得分（不阻塞）
+    showRoundEndDialog('第一环节 · 个人必答 全部完成',
+      '本环节得分正在播报，并已显示在大屏上。\n点【确定】收起本提示；想重播点面板上的【本环节小结】。');
     return;
   }
   state.r1.currentTeamIdx   = tIdx;
@@ -2820,7 +2840,9 @@ function r2NextTeam() {
     state.r2.currentQIdx = null;
     state.displayMode = 'question';   // 无题 → 大屏回赛前背景
     save(); render();
-    speakRoundSummary(2, () => alert('团队共答全部完成！\n\n本环节得分已显示在大屏上。\n想逐队语音播报，点面板上的【本环节小结】。'), { silent: true });
+    speakRoundSummary(2);   // 逐队播报本环节得分（不阻塞）
+    showRoundEndDialog('第二环节 · 团队共答 全部完成',
+      '本环节得分正在播报，并已显示在大屏上。\n点【确定】收起本提示；想重播点面板上的【本环节小结】。');
     return;
   }
   // 下一队：回翻牌，等该队上场
@@ -2932,9 +2954,9 @@ function r3ScheduleAutoNext(delay = 2000) {
     // 出满题数 / 池子抽空 → 自动收工。这里自己判，不让 r3StartQ 去弹 alert：
     // 自动模式下没人守着屏幕点确定，弹窗会把整个环节卡死
     if ((turns > 0 && state.r3.usedQIds.length >= turns) || !drawR3QuestionId()) {
-      // 与①②④⑤一致：环节自然打完只亮大屏小结、不发声，弹窗等主持人点确定。
-      // 语音会被紧接着的 modal 打断，念一半的成绩比不念更糟。
-      speakRoundSummary(3, () => alert('擂台抢答环节结束。\n\n本环节得分已显示在大屏上。\n想逐队语音播报，点面板上的【本环节小结】。'), { silent: true });
+      speakRoundSummary(3);   // 逐队播报本环节得分（不阻塞）
+      showRoundEndDialog('第三环节 · 擂台抢答 全部完成',
+        '本环节得分正在播报，并已显示在大屏上。\n点【确定】收起本提示；想重播点面板上的【本环节小结】。');
       return;
     }
     // 本环节第一题：规则刚念完，先起个头再出题，别让规则和题目直接撞在一起。
@@ -3077,7 +3099,9 @@ function r4Next() {
   } else {
     state.displayMode = 'question';
     save(); render();
-    speakRoundSummary(4, () => alert('识图找茬全部完成！\n\n本环节得分已显示在大屏上。\n想逐队语音播报，点面板上的【本环节小结】。'), { silent: true });
+    speakRoundSummary(4);   // 逐队播报本环节得分（不阻塞）
+    showRoundEndDialog('第四环节 · 识图找茬 全部完成',
+      '本环节得分正在播报，并已显示在大屏上。\n点【确定】收起本提示；想重播点面板上的【本环节小结】。');
   }
 }
 function r4StartTimer() { cdSpoken.clear(); startTimer(state.r4.timerSec*1000, 4); }
@@ -3203,7 +3227,9 @@ function r5NextTheme() {
   const themes = state.questions.filter(q=>q.round===5&&q.type==='theme');
   const ni = state.r5.currentThemeIdx + 1;
   if (ni >= themes.length) {
-    speakRoundSummary(5, () => alert('飞花令全部令题已完成！\n\n本环节得分已显示在大屏上。\n想逐队语音播报，点面板上的【本环节小结】。'), { silent: true });
+    speakRoundSummary(5);   // 逐队播报本环节得分（不阻塞）
+    showRoundEndDialog('第五环节 · 服务飞花令 全部完成',
+      '本环节得分正在播报，并已显示在大屏上。\n点【确定】收起本提示；想重播点面板上的【本环节小结】。');
     return;
   }
   r5RevealTheme(ni);
@@ -3402,7 +3428,7 @@ const ROUND_FULL_NAME = { 1:'个人必答', 2:'团队共答', 3:'擂台抢答', 
  * 按【本环节得分】从高到低报，同分再看总分 —— 收尾时观众最关心的是这一环节谁赢了。
  * 得分可能为负（擂台抢答无下限），scoreToSpeech 会念成"负X分"。
  */
-function speakRoundSummary(round, onend, opts = {}) {
+function speakRoundSummary(round, onend) {
   const key  = 'r' + round;
   // 按【总分】排：大屏柱子画的是总分，排序不跟着总分走的话柱子会高低乱序。
   // 同分再看本环节得分。播报顺序与柱子顺序保持一致。
@@ -3417,16 +3443,25 @@ function speakRoundSummary(round, onend, opts = {}) {
   state.roundSummary = { round, rows };
   save(); render();
 
-  // silent：只亮柱状图、不发声。环节自然打完时用 —— 那一刻紧接着要弹确认框，
-  // 语音还没念完就被 modal 打断，念一半的成绩比不念更糟；主持人也往往正要说话。
-  // 想听逐队播报，随时点面板上的【本环节小结】。
-  if (opts.silent) { onend?.(); return; }
-
   const body = rows
     .map(r => `${r.name}，本环节${scoreToSpeech(r.score)}，总分${scoreToSpeech(r.total)}`)
     .join('；');
   speak(`${ROUND_ORDINAL[round]}，${ROUND_FULL_NAME[round]}，结束。各队得分如下：${body}。`,
         { onend });
+}
+
+/**
+ * 环节结束的确认框。用页面内的框而不是 alert()：
+ * alert 会阻塞 JS 线程，语音的异步请求跑不起来 —— 成绩要么念不出来，
+ * 要么得等念完（十几秒）弹窗才出现，现场看着像卡死。
+ */
+function showRoundEndDialog(title, msg) {
+  document.getElementById('round-end-title').textContent = title;
+  document.getElementById('round-end-msg').textContent   = msg;
+  document.getElementById('round-end-overlay').classList.add('open');
+}
+function closeRoundEndDialog() {
+  document.getElementById('round-end-overlay').classList.remove('open');
 }
 
 /** 面板上的【本环节小结】按钮：再点一次收起大屏的柱状图 */
