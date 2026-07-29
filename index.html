@@ -260,6 +260,7 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
   <button class="rtab" data-r="3" onclick="switchTab(3)">③ 擂台抢答</button>
   <button class="rtab" data-r="4" onclick="switchTab(4)">④ 识图找茬</button>
   <button class="rtab" data-r="5" onclick="switchTab(5)">⑤ 服务飞花令</button>
+  <button class="rtab" data-r="6" onclick="switchTab(6)">⑥ 观众答题</button>
 </div>
 
 <!-- main -->
@@ -574,6 +575,26 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
   </div>
 </div>
 
+<div class="panel" id="panel-6">
+  <div class="card">
+    <div class="card-title">观众答题 <span class="pill" id="r6-pill">互动环节 · 不计分</span></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.7">
+      面向现场观众的穿插环节：随机出题 → 观众抢答 → 公布答案 → 下一题。<br>
+      不计时、不计分，节奏完全由主持人掌握。抽到的题会从正赛题池中划走，
+      避免选手之后抽到观众已经听过答案的题。
+    </div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn-primary" onclick="r6Init()">开始本环节</button>
+      <button class="btn-warn btn-lg" onclick="r6Next()">🎲 随机出题</button>
+      <button class="btn-success" id="r6-reveal-btn" onclick="r6Reveal()">公布答案</button>
+      <button class="btn-ghost btn-sm" onclick="r6ReadQ()" title="朗读当前题目（题干+选项）">🔊 朗读题目</button>
+      <button class="btn-ghost btn-sm pause-btn" onclick="doTogglePause()"></button>
+      <span id="r6-progress" style="color:var(--muted);font-size:12px"></span>
+    </div>
+    <div id="r6-q-box" class="q-box"></div>
+  </div>
+</div>
+
 </div><!-- #main -->
 
 <!-- timer bar -->
@@ -813,7 +834,7 @@ function switchPanel(n) {
     state.showAnswerOnDisplay = false;
     state.showScoresOnDisplay = false;
     save();
-  } else if (n >= 1 && n <= 5) {
+  } else if (n >= 1 && n <= 6) {
     // 切换标签时同步 display
     state.currentRound = n;
     state.showAnswerOnDisplay = false;
@@ -892,6 +913,7 @@ function render() {
   if (curPanel === 3) renderP3();
   if (curPanel === 4) renderP4();
   if (curPanel === 5) renderP5();
+  if (curPanel === 6) renderP6();
   // 放在 render() 而非 switchPanel()：r2Init() 是先 switchPanel 再 initCardDeck，
   // 挂在 switchPanel 上会在牌组建好【之前】就算出提示，之后再也不刷新
   renderDeckHint(curPanel);
@@ -913,8 +935,8 @@ function renderPauseUI() {
 }
 
 function renderTopbar() {
-  const ROUND_NAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令'];
-  const ROUND_CLS   = ['badge-blue','badge-yellow','badge-yellow','badge-red','badge-green','badge-purple'];
+  const ROUND_NAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令','观众答题'];
+  const ROUND_CLS   = ['badge-blue','badge-yellow','badge-yellow','badge-red','badge-green','badge-purple','badge-blue'];
   const b = document.getElementById('round-badge');
   b.textContent = ROUND_NAMES[state.currentRound] || '赛前';
   b.className = 'badge ' + (ROUND_CLS[state.currentRound] || 'badge-blue');
@@ -2236,12 +2258,13 @@ function currentRoundHasQuestion() {
   if (r === 2) return state.r2.currentQIdx != null;
   if (r === 3) return state.r3.currentQIdx != null;
   if (r === 4) return state.r4.currentQIdx != null;
+  if (r === 6) return state.r6.currentQIdx != null;
   return false;   // R5 飞花令无 currentQIdx
 }
 function announceRulesIfNeeded() {
   if (!window.IS_CONTROL || state.paused) return;
   const round = state.currentRound;
-  if (round < 1 || round > 5) return;
+  if (round < 1 || round > 6) return;
   // 占位符（{分值}/{秒数}…）在这里就换成当前配置值，念出来才和实际判分一致
   const txt = getRoundRulesText(round);
   if (!txt) return;
@@ -2261,7 +2284,7 @@ function announceRulesIfNeeded() {
   state.roundRulesDismissed[round] = false;
   save();
 
-  const RNAMES = ['','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令'];
+  const RNAMES = ['','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令','观众答题'];
   let _closed = false;
   const close = () => {
     if (_closed) return;                       // 只关一次（onend 与保底定时器可能都触发）
@@ -3452,6 +3475,59 @@ function r5ManualWinner() {
   else alert('无效的队伍ID');
 }
 
+// ── ⑥ 观众答题 ───────────────────────────────────
+// 全场最简单的环节：随机出题 → 观众抢答 → 公布答案 → 下一题。
+// 不计时、不计分、不选队员，所以这里既不碰 timer 也不碰分数。
+
+/** 开始本环节：切到观众答题视图并读规则 */
+function r6Init() {
+  switchPanel(6);            // 先切视图（会把 displayMode 拨回 question）
+  initR6();                  // save() 后由 announceRulesIfNeeded 自动亮规则并朗读
+  render();
+}
+
+/** 随机出下一题。抽空时明确告知，不静默失败 */
+function r6Next() {
+  if (state.paused) return alert('全场已暂停，点【继续本环节】后再出题。');
+  if (state.currentRound !== 6) initR6();      // 允许直接点「随机出题」进入本环节
+  const q = r6DrawQuestion();
+  if (!q) {
+    return alert('题库里已经没有可出的题了。\n\n'
+               + '（正赛各环节抽走的题不会重复出，可在 赛前准备 → 初始化 里把题池清回初始状态）');
+  }
+  if (state.tts.autoRead) r6ReadQ();
+  render();
+}
+
+/** 朗读当前题目：题干 + 选项。不接倒计时 —— 本环节没有计时 */
+function r6ReadQ() {
+  const q = state.r6.currentQIdx != null ? state.questions[state.r6.currentQIdx] : null;
+  if (!q) return;
+  speakQueue(buildQuestionSegments(q).filter(Boolean));
+}
+
+/** 公布 / 收起答案（大屏同步）。观众答题靠主持人现场认定，这里只管亮答案 */
+function r6Reveal() {
+  if (state.r6.currentQIdx == null) return alert('还没有出题。');
+  state.showAnswerOnDisplay = !state.showAnswerOnDisplay;
+  save();
+  if (state.showAnswerOnDisplay && state.tts.autoRead) {
+    const q = state.questions[state.r6.currentQIdx];
+    const ans = Array.isArray(q?.answer) ? q.answer.join('、') : String(q?.answer ?? '');
+    if (ans) speak('正确答案，' + ans);
+  }
+  render();
+}
+
+function renderP6() {
+  const shown = (state.r6.usedQIds || []).length;
+  document.getElementById('r6-progress').textContent =
+    `本环节已出 ${shown} 题　·　题库剩余 ${r6RemainingCount()} 题`;
+  const btn = document.getElementById('r6-reveal-btn');
+  if (btn) btn.textContent = state.showAnswerOnDisplay ? '收起答案' : '公布答案';
+  renderQBox('r6-q-box', state.r6.currentQIdx, false);
+}
+
 // ── 成绩导出 ─────────────────────────────────────
 /** 触发浏览器下载。CSV 前置 BOM，否则 Excel 会把 UTF-8 中文读成乱码 */
 function _download(filename, content, mime) {
@@ -3711,6 +3787,7 @@ const SETTING_TABS = [
   { id:3, label:'③ 擂台抢答' },
   { id:4, label:'④ 识图找茬' },
   { id:5, label:'⑤ 服务飞花令' },
+  { id:6, label:'⑥ 观众答题' },
 ];
 let _sTab = 'common';
 
@@ -3739,11 +3816,16 @@ function renderSettingsTabs() {
 function renderRoundSettings(r) {
   const box = document.getElementById('s-panel-round');
   if (!box) return;
-  const NAMES = { 1:'个人必答', 2:'团队共答', 3:'擂台抢答', 4:'识图找茬', 5:'服务飞花令' };
+  const NAMES = { 1:'个人必答', 2:'团队共答', 3:'擂台抢答', 4:'识图找茬', 5:'服务飞花令', 6:'观众答题' };
+  // ⑥ 观众答题只有规则文案可配：它不抽题配置（随机出题）、不计时、不计分
+  const isR6 = (r === 6);
   box.innerHTML = [
-    drawCfgSection(r),          // 抽题（仅 R1~R3；R4/R5 是单独上传的题源）
-    timerCfgSection(r),         // 倒计时
-    scoreCfgSection(r),         // 计分
+    isR6 ? '<div class="s-section"><h3>说明</h3><div style="font-size:12px;color:var(--muted);line-height:1.8">'
+         + '本环节面向现场观众，随机出题、手动推进，<b>不计时、不计分</b>，因此没有抽题/倒计时/计分配置。<br>'
+         + '出过的题会从正赛题池中划走，避免选手之后抽到观众已经听过答案的题。</div></div>' : '',
+    isR6 ? '' : drawCfgSection(r),   // 抽题（仅 R1~R3；R4/R5 是单独上传的题源）
+    isR6 ? '' : timerCfgSection(r),  // 倒计时
+    isR6 ? '' : scoreCfgSection(r),  // 计分
     r === 3 ? r3AutoReadSection() : '',
     r === 3 ? keymapSection() : '',
     r === 4 ? r4ImageSection() : '',
@@ -3751,7 +3833,7 @@ function renderRoundSettings(r) {
   ].filter(Boolean).join('<div class="sep"></div>');
 
   // 这几块的内容由各自的 render 函数填，容器刚建好才能填
-  if (r <= 3) refreshDrawCfgHint(r);
+  if (r >= 1 && r <= 3) refreshDrawCfgHint(r);
   if (r === 3) renderKeymapEditors();
   if (r === 4) renderR4Readiness();
   const ta = document.getElementById('s-rules-' + r);

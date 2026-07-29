@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-29.26';
+const APP_BUILD = '2026-07-29.28';
 
 // 本页面实例的唯一标识，随广播一起发出。
 // 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
@@ -118,6 +118,8 @@ function defaultState() {
       3: '一、主持人出题并宣布「开始抢答」后，各队方可按抢答器。\n二、最先抢到的队伍作答，答对加 {分值} 分，答错扣 {扣分} 分。\n三、抢答犯规（抢答口令前抢按）扣分并暂停一次抢答资格。\n四、每题限时 {秒数} 秒，本环节{上限}。',
       4: '一、各队依次上场，在场景图中找出服务不规范之处。\n二、每找对一处得 {分值} 分，每图至多 {处数} 处。\n三、每队本环节{上限}。\n四、限时 {秒数} 秒，时间到即停止作答，误报不倒扣。',
       5: '一、各队围绕主题轮流说出符合要求的服务用语或要点。\n二、每答出一条有效内容得 {分值} 分；本题擂主额外得 {擂主分} 分。\n三、重复、不符或 {秒数} 秒内答不出即淘汰出本题。\n四、本环节{上限}。',
+      // 观众互动环节：不计分、不限时，主持人手动出题与公布答案，节奏完全由现场掌握
+      6: '一、本环节面向现场观众，不计入各队成绩。\n二、主持人随机出题，观众举手抢答。\n三、不限时，答对与否由主持人现场认定。',
     },
     roundRulesDismissed: {}, // 规则朗读完毕后置 true，大屏据此自动关闭规则窗口
 
@@ -250,6 +252,15 @@ function defaultState() {
       // 大屏此时把表停在满格显示「预备」，念完才真正开始走。
       awaitingStart:    false,
       isTiebreak:      false,// 当前令题是否为并列加赛（只有并列队参加）
+    },
+
+    // ── ⑥ 观众答题（互动环节）──────────────────
+    // 面向现场观众的穿插环节，刻意做得极简：不计分、不计时、不选队员，
+    // 出题与公布答案全靠主持人手点，节奏由现场气氛决定。
+    // 抽到的题照样记进全场 usedQIds —— 观众已经当众听过答案的题，不能再出给选手。
+    r6: {
+      currentQIdx: null,   // 当前题在 questions[] 中的索引
+      usedQIds:    [],     // 本环节出过的题 id（供「已出 N 题」计数与重置）
     },
 
     // ── 翻牌选题 ────────────────────────────────
@@ -2344,6 +2355,52 @@ function _r5NextTurn() {
 }
 
 // =====================================================
+// ⑥ 观众答题（互动环节）
+// =====================================================
+// 全场最简单的一个环节：随机出题 → 主持人公布答案 → 下一题。
+// 没有倒计时、没有队伍、没有分数，所以这里既不碰 timer 也不碰 teams/history。
+
+/** 进入观众答题：清掉当前题（出过的题记录保留，用于计数） */
+function initR6() {
+  state.currentRound        = 6;
+  state.r6.currentQIdx      = null;
+  state.displayMode         = 'question';
+  state.showAnswerOnDisplay = false;
+  state.showScoresOnDisplay = false;
+  state.roundSummary        = null;
+  stopTimer();               // 本环节不计时，顺手把上一环节的残表收干净
+  save();
+}
+
+/**
+ * 随机出一道观众题。返回题目对象；池子抽空时返回 null。
+ *
+ * 用的是各环节共用的那个扁平题型池，并且【照样记进 state.usedQIds】——
+ * 观众已经当众听过答案的题绝不能再出给选手，否则抽到那题的队等于白捡分。
+ * 代价是会消耗正赛题量，但池子有几百道，够用。
+ */
+function r6DrawQuestion() {
+  const used  = new Set(state.usedQIds || []);
+  const avail = poolAll().filter(q => !used.has(q.id));
+  if (!avail.length) return null;
+
+  const q   = avail[Math.floor(Math.random() * avail.length)];
+  const idx = state.questions.findIndex(x => x.id === q.id);
+  state.r6.currentQIdx      = idx >= 0 ? idx : null;
+  state.r6.usedQIds.push(q.id);
+  markQIdsUsed([q.id]);
+  state.showAnswerOnDisplay = false;   // 新题上屏，先把答案藏起来
+  save();
+  return q;
+}
+
+/** 题库里还能出几道（剩余可抽量） */
+function r6RemainingCount() {
+  const used = new Set(state.usedQIds || []);
+  return poolAll().filter(q => !used.has(q.id)).length;
+}
+
+// =====================================================
 // 事件记录与分数调整
 // =====================================================
 
@@ -2477,6 +2534,10 @@ function resetContest() {
   state.r5.teamOrder       = [];  state.r5.activeTeams      = [];
   state.r5.usedAnswers     = [];  state.r5.themeWinners     = [];
   state.r5.isTiebreak      = false;
+  state.r5.lastAccepted    = null; state.r5.awaitingStart    = false;
+  state.r5.currentMemberIdx = null;
+
+  state.r6.currentQIdx     = null; state.r6.usedQIds         = [];
 
   // 赛程与大屏
   state.currentRound        = 0;
@@ -2561,6 +2622,8 @@ function loadQuestions(data) {
   state.r4.currentQIdx = null;  state.r4.usedQIds   = [];
   state.r4.spotJudge   = {};    state.r4.extraSpots = [];
   state.r5.usedAnswers = [];    state.r5.themeWinners = [];
+  state.r5.lastAccepted = null; state.r5.awaitingStart = false;
+  state.r6.currentQIdx = null;  state.r6.usedQIds   = [];
 
   state.pickedAnswer        = null;
   state.showAnswerOnDisplay = false;
@@ -2637,7 +2700,7 @@ function getRoundRulesText(round) {
 // 成绩报告导出（赛后存档）
 // =====================================================
 
-const ROUND_NAMES_CN = ['', '个人必答', '团队共答', '擂台抢答', '识图找茬', '服务飞花令'];
+const ROUND_NAMES_CN = ['', '个人必答', '团队共答', '擂台抢答', '识图找茬', '服务飞花令', '观众答题'];
 
 function _csvCell(v) {
   const s = String(v ?? '');

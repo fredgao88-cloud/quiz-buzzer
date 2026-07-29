@@ -562,7 +562,7 @@ function updateRulesWindow() {
   //（环节刚答完没有题目，规则窗的显示条件又成立了，会正好盖在小结图上）
   const inSummary = !!state.roundSummary?.rows?.length;
   if (txt && showing && !inSummary && getActiveQIdx() == null) {
-    const RNAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令'];
+    const RNAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令','观众答题'];
     document.getElementById('cf-rules-title').textContent = (RNAMES[round] || '本环节') + ' · 规则说明';
     document.getElementById('cf-rules-body').textContent = txt;
     el.style.display = 'block';
@@ -599,7 +599,7 @@ function updatePrepCover() {
 }
 
 function updateHeader() {
-  const NAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令'];
+  const NAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令','观众答题'];
   document.getElementById('round-tag').textContent = NAMES[state.currentRound] || '赛前准备';
   const li = document.getElementById('logo-img');
   if (state.logo) { li.src = state.logo; li.style.display = ''; } else li.style.display = 'none';
@@ -674,6 +674,8 @@ function getActiveQIdx() {
   if (r === 2) return state.r2.currentQIdx;
   if (r === 3) return state.r3.currentQIdx;
   if (r === 4) return state.r4.currentQIdx;
+  if (r === 6) return state.r6?.currentQIdx ?? null;   // 观众答题：走通用题目视图
+                                              // 可选链：旧版控制台发来的快照可能没有 r6
   return null;
 }
 
