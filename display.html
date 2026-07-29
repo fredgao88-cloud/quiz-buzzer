@@ -247,6 +247,30 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 .draw-slot-d .ds-name{font-size:20px;font-weight:800;text-align:center}
 
 /* ── 飞花令界面 ── */
+/* ⑦ 颁奖整屏层。背景图左侧是奖杯，所以内容整体靠右半边排 ——
+   用 padding-left:50% 把文字推到右半区，奖杯那半边一个字都不压。 */
+#award-area{position:absolute;inset:0;display:none;flex-direction:column;justify-content:center;
+  align-items:center;z-index:6;background:var(--bg);background-size:cover;background-position:center;
+  padding:4vh 4vw 4vh 50vw;text-align:center}
+#award-area.show{display:flex}
+#award-name{font-size:clamp(34px,4.6vw,86px);font-weight:900;letter-spacing:6px;color:#fde68a;
+  text-shadow:0 4px 18px rgba(0,0,0,.95),0 0 46px rgba(251,191,36,.55);margin-bottom:2.4vh}
+#award-sub{font-size:clamp(16px,1.7vw,28px);color:#e2e8f0;letter-spacing:4px;margin-bottom:3vh;
+  text-shadow:0 2px 10px rgba(0,0,0,.9)}
+/* 名单：人数差别极大（1 人到 12 人），用 flex 自动换行 + 按人数分档字号 */
+#award-list{display:flex;flex-wrap:wrap;gap:1.4vh 1.6vw;justify-content:center;align-content:center;
+  max-height:62vh;overflow:hidden;width:100%}
+#award-list .aw-item{display:inline-flex;flex-direction:column;align-items:center;gap:.35em;
+  padding:.5em 1.1em;border-radius:14px;background:#0b122099;border:2px solid #fbbf2455;
+  animation:accepted-in .5s cubic-bezier(.22,1.4,.4,1) both}
+#award-list .aw-nm{font-weight:900;color:#fff;text-shadow:0 3px 12px rgba(0,0,0,.95);line-height:1.15}
+#award-list .aw-sb{font-size:.44em;font-weight:700;color:#cbd5e1;letter-spacing:2px}
+/* 人数分档：人越多字越小，保证 12 人也能一屏排下 */
+#award-list.n-few  .aw-nm{font-size:clamp(30px,4vw,72px)}
+#award-list.n-mid  .aw-nm{font-size:clamp(24px,2.9vw,52px)}
+#award-list.n-many .aw-nm{font-size:clamp(19px,2.1vw,38px)}
+#award-hint{font-size:clamp(18px,2vw,34px);color:#94a3b8;letter-spacing:8px;
+  text-shadow:0 2px 10px rgba(0,0,0,.9)}
 #flower-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);background-size:cover;background-position:center;z-index:5;padding:32px;overflow:hidden}
 /* 令题、轮次条、答案框都不许被压缩；真放不下时只让「已用答案」那一块收缩并内部滚动 */
 #flower-theme,#flower-turn,#flower-accepted,#flower-used-label{flex:0 0 auto}
@@ -413,6 +437,14 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 </div>
 
 <!-- flower overlay -->
+<!-- ⑦ 颁奖 -->
+<div id="award-area">
+  <div id="award-name"></div>
+  <div id="award-sub"></div>
+  <div id="award-list"></div>
+  <div id="award-hint"></div>
+</div>
+
 <div id="flower-area">
   <div id="flower-theme"></div>
   <div id="flower-turn"></div>
@@ -454,6 +486,8 @@ function render() {
   document.getElementById('cardflip-area').classList.toggle('show', !!inCardFlip);
   document.getElementById('turncard-area').classList.toggle('show', !!inTurnCard);
   document.getElementById('flower-area').classList.toggle('show', state.currentRound === 5 && !inTurnCard);
+  document.getElementById('award-area').classList.toggle('show', state.currentRound === 7);
+  if (state.currentRound === 7) updateAwardArea();
   updateRoundSummary();   // 环节小结柱状图，z-index 最高，盖在以上浮层之上
 
   if (inTurnCard) {
@@ -572,7 +606,7 @@ function updateRulesWindow() {
   //（环节刚答完没有题目，规则窗的显示条件又成立了，会正好盖在小结图上）
   const inSummary = !!state.roundSummary?.rows?.length;
   if (txt && showing && !inSummary && getActiveQIdx() == null) {
-    const RNAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令','观众答题'];
+    const RNAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令','观众答题','颁奖'];
     document.getElementById('cf-rules-title').textContent = (RNAMES[round] || '本环节') + ' · 规则说明';
     document.getElementById('cf-rules-body').textContent = txt;
     el.style.display = 'block';
@@ -591,11 +625,12 @@ function updatePrepCover() {
   const inDraw     = mode === 'draw';
   const inTurnCard = mode === 'turncard' && state.turnCard?.round === state.currentRound;
   const inFlower   = state.currentRound === 5 && !inTurnCard;
+  const inAward    = state.currentRound === 7;   // 颁奖是整屏层，赛前背景不能盖上来
   const hasQuestion = getActiveQIdx() != null;
   // 环节小结柱状图正在展示时绝不能铺赛前背景 —— 它是 z-index:100 的整屏覆盖层，
   // 会把小结图整个盖住（环节刚答完时正好没有题目，最容易撞上）。
   const inSummary = !!state.roundSummary?.rows?.length;
-  const showCover = !inCardFlip && !inDraw && !inFlower && !inTurnCard && !hasQuestion && !inSummary;
+  const showCover = !inCardFlip && !inDraw && !inFlower && !inAward && !inTurnCard && !hasQuestion && !inSummary;
   cover.classList.toggle('show', showCover);
   if (!showCover) { cover.style.backgroundImage = 'none'; return; }
   if (state.prepBg) {
@@ -609,14 +644,14 @@ function updatePrepCover() {
 }
 
 function updateHeader() {
-  const NAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令','观众答题'];
+  const NAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令','观众答题','颁奖'];
   const tag = document.getElementById('round-tag');
   tag.textContent = NAMES[state.currentRound] || '赛前准备';
 
   // ⑥ 观众答题：环节名与计时圆环一并收起。
   // 圆环在本环节永远是「--」（不计时），环节名对台下观众也没有信息量 ——
   // 两个都留着只是把版面挤窄、把题目往下压。
-  const isR6 = state.currentRound === 6;
+  const isR6 = state.currentRound === 6 || state.currentRound === 7;   // ⑥⑦ 都不计时
   tag.style.display = isR6 ? 'none' : '';
   document.getElementById('timer-ring-wrap').style.display = isR6 ? 'none' : '';
   const li = document.getElementById('logo-img');
@@ -1148,6 +1183,46 @@ function updateFlowerArea() {
   const uEl = document.getElementById('flower-used');
   uEl.scrollTop = uEl.scrollHeight;
   uEl.classList.toggle('clipped', uEl.scrollHeight > uEl.clientHeight + 1);
+}
+
+function updateAwardArea() {
+  const A  = state.awards || {};
+  const aw = (A.list || [])[A.currentIdx];
+  const area = document.getElementById('award-area');
+
+  area.style.backgroundImage = A.bgImage ? 'url("' + A.bgImage + '")' : 'none';
+
+  if (!aw) {
+    document.getElementById('award-name').textContent = '颁奖';
+    document.getElementById('award-sub').textContent  = '';
+    document.getElementById('award-list').innerHTML   = '';
+    document.getElementById('award-hint').textContent = '';
+    return;
+  }
+
+  document.getElementById('award-name').textContent = aw.name;
+  document.getElementById('award-sub').textContent  = '共 ' + aw.count + ' 名';
+
+  const listEl = document.getElementById('award-list');
+  const hintEl = document.getElementById('award-hint');
+
+  // 未公布时只亮奖项名，名单留白 —— 悬念是颁奖环节的全部意义
+  if (!A.revealed) {
+    listEl.innerHTML   = '';
+    listEl.className   = '';
+    hintEl.textContent = '· 即将揭晓 ·';
+    return;
+  }
+  hintEl.textContent = '';
+
+  const ws = awardWinners(aw);
+  // 人数分档：1~3 人给最大字号，12 人时压到最小才排得下
+  listEl.className = ws.length <= 3 ? 'n-few' : (ws.length <= 6 ? 'n-mid' : 'n-many');
+  listEl.innerHTML = ws.map(w =>
+    '<span class="aw-item">'
+    + '<span class="aw-nm">' + escapeHtml(w.name) + '</span>'
+    + (w.sub ? '<span class="aw-sb">' + escapeHtml(w.sub) + '</span>' : '')
+    + '</span>').join('');
 }
 
 // ── 向控制台报告本页代码版本 ──────────────────────

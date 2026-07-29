@@ -20,7 +20,7 @@ const BC_NAME     = 'rz_contest_channel_v3';
 // 结果就是「代码明明改了、界面还是老样子」—— 排查这种情况极费时间，
 // 因为两个页面看起来都正常，只是其中一个跑着旧逻辑。
 // 有了它：控制台顶栏显示自己的版本，并在发现大屏版本不一致时亮红字。
-const APP_BUILD = '2026-07-29.33';
+const APP_BUILD = '2026-07-30.1';
 
 // 本页面实例的唯一标识，随广播一起发出。
 // 为什么需要：BroadcastChannel 的消息会送达【同一个页面里的其他实例】——
@@ -254,6 +254,33 @@ function defaultState() {
       // 大屏此时把表停在满格显示「预备」，念完才真正开始走。
       awaitingStart:    false,
       isTiebreak:      false,// 当前令题是否为并列加赛（只有并列队参加）
+    },
+
+    // ── ⑦ 颁奖 ────────────────────────────────
+    // 赛后颁奖。大屏铺一张背景图（左侧是奖杯），获奖名单写在图的右半边。
+    //
+    // 奖项分三类，来源不同：
+    //   member —— 个人奖，从各队已录入的队员里勾选
+    //   team   —— 团队奖（组织奖），选队伍，也允许手填一个名字（可能颁给非参赛单位）
+    //   auto   —— 一/二/三等奖，直接取比赛总分排名，不用人选；名次并列时会提示
+    awards: {
+      bgImage:    null,   // 颁奖背景图路径（同 prepBg，走 images/ 上传）
+      currentIdx: 0,      // 当前颁到第几个奖项
+      revealed:   false,  // 名单是否已上屏（先亮奖项名、再亮名单，留出悬念）
+      // winners 里存的是【引用】不是名字快照：队员改名、分数变动都能跟着走。
+      //   member: { teamId, memberIdx }
+      //   team:   { teamId } 或 { text:'手填名称' }
+      //   auto:   留空，由 awardWinners() 按 rank 现算
+      list: [
+        { key:'p_win',   name:'个人服务优胜奖', type:'member', count:12, winners:[] },
+        { key:'p_know',  name:'服务知识之星奖', type:'member', count:3,  winners:[] },
+        { key:'p_skill', name:'服务竞技之星',   type:'member', count:3,  winners:[] },
+        { key:'p_flower',name:'服务飞花令达人', type:'member', count:2,  winners:[] },
+        { key:'t_org',   name:'组织奖',         type:'team',   count:2,  winners:[] },
+        { key:'r_3rd',   name:'三等奖',         type:'auto',   count:1,  rank:3, winners:[] },
+        { key:'r_2nd',   name:'二等奖',         type:'auto',   count:1,  rank:2, winners:[] },
+        { key:'r_1st',   name:'一等奖',         type:'auto',   count:1,  rank:1, winners:[] },
+      ],
     },
 
     // ── ⑥ 观众答题（互动环节）──────────────────
@@ -2422,6 +2449,107 @@ function r6RemainingCount() {
 }
 
 // =====================================================
+// ⑦ 颁奖
+// =====================================================
+
+/** 当前奖项（越界返回 null） */
+function currentAward() {
+  return state.awards.list[state.awards.currentIdx] || null;
+}
+
+/** 进入颁奖环节 */
+function initAwards() {
+  state.currentRound        = 7;
+  state.awards.revealed     = false;
+  state.displayMode         = 'question';
+  state.showAnswerOnDisplay = false;
+  state.showScoresOnDisplay = false;
+  state.roundSummary        = null;
+  stopTimer();
+  save();
+}
+
+/**
+ * 解析某个奖项的获奖名单，返回 [{ name, sub, teamId }]。
+ * name = 显示的主名称，sub = 副标题（个人奖显示所属队伍、名次奖显示总分）
+ *
+ * auto 类（一/二/三等奖）现算：直接取总分排名，不用人工选 —— 那是比赛结果，
+ * 让人再录一遍既多余又容易录错。并列时按 count 截断，由控制台单独提示加赛。
+ */
+function awardWinners(award) {
+  if (!award) return [];
+  if (award.type === 'auto') {
+    const ranking = getRanking();
+    // rank 是名次（1=冠军）。同分并列时 getRanking 的先后是数组原序，
+    // 这里照实取，控制台会亮出并列提示让主持人先加赛。
+    const row = ranking[(award.rank || 1) - 1];
+    return row ? [{ name: row.team.name, sub: `总分 ${row.total}`, teamId: row.team.id }] : [];
+  }
+  return (award.winners || []).map(w => {
+    if (w.text) return { name: w.text, sub: '', teamId: null };
+    const t = getTeam(w.teamId);
+    if (!t) return null;
+    if (award.type === 'member') {
+      const nm = (t.members || [])[w.memberIdx];
+      return nm ? { name: nm, sub: t.name, teamId: t.id } : null;
+    }
+    return { name: t.name, sub: '', teamId: t.id };
+  }).filter(Boolean);
+}
+
+/** 该获奖者是否已被选中（member 比对 teamId+memberIdx，team 比对 teamId） */
+function awardHas(award, teamId, memberIdx) {
+  return (award.winners || []).some(w =>
+    w.teamId === teamId && (award.type !== 'member' || w.memberIdx === memberIdx));
+}
+
+/**
+ * 勾选/取消一个获奖者。超过 count 时拒绝并返回提示文案，成功返回 null。
+ * 不静默丢弃 —— 颁奖名单错一个人是现场事故。
+ */
+function toggleAwardWinner(award, teamId, memberIdx) {
+  if (!award || award.type === 'auto') return '本奖项由比赛结果自动产生，不能手工改。';
+  award.winners = award.winners || [];
+  const i = award.winners.findIndex(w =>
+    w.teamId === teamId && (award.type !== 'member' || w.memberIdx === memberIdx));
+  if (i >= 0) { award.winners.splice(i, 1); save(); return null; }
+  if (award.winners.length >= award.count) {
+    return `「${award.name}」限 ${award.count} 位，已选满。先取消一位再选。`;
+  }
+  award.winners.push(award.type === 'member' ? { teamId, memberIdx } : { teamId });
+  save();
+  return null;
+}
+
+/** 手填一个获奖名称（组织奖可能颁给非参赛单位） */
+function addAwardText(award, text) {
+  const v = String(text || '').trim();
+  if (!v) return '名称不能为空。';
+  if (award.type === 'auto')   return '本奖项由比赛结果自动产生，不能手工改。';
+  award.winners = award.winners || [];
+  if (award.winners.length >= award.count) {
+    return `「${award.name}」限 ${award.count} 位，已选满。`;
+  }
+  award.winners.push({ text: v });
+  save();
+  return null;
+}
+
+function removeAwardWinnerAt(award, i) {
+  if (!award || award.type === 'auto') return;
+  (award.winners || []).splice(i, 1);
+  save();
+}
+
+/** 切到第 i 个奖项（切换时收起名单，重新制造悬念） */
+function setCurrentAward(i) {
+  if (i < 0 || i >= state.awards.list.length) return;
+  state.awards.currentIdx = i;
+  state.awards.revealed   = false;
+  save();
+}
+
+// =====================================================
 // 事件记录与分数调整
 // =====================================================
 
@@ -2722,7 +2850,7 @@ function getRoundRulesText(round) {
 // 成绩报告导出（赛后存档）
 // =====================================================
 
-const ROUND_NAMES_CN = ['', '个人必答', '团队共答', '擂台抢答', '识图找茬', '服务飞花令', '观众答题'];
+const ROUND_NAMES_CN = ['', '个人必答', '团队共答', '擂台抢答', '识图找茬', '服务飞花令', '观众答题', '颁奖'];
 
 function _csvCell(v) {
   const s = String(v ?? '');
@@ -2848,6 +2976,7 @@ function buildConfigJSON() {
     r3:         _pickKeys(state.r3, ['timerSec', 'autoRead', 'skipRules', 'beep']),
     r4:         _pickKeys(state.r4, ['timerSec', 'spotPos']),   // spotPos = 找茬点坐标
     r5:         _pickKeys(state.r5, ['timerSec']),
+    awards:     _pickKeys(state.awards, ['bgImage', 'list']),   // 奖项设置随配置走
   }, null, 1);
 }
 

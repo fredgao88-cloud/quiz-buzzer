@@ -261,6 +261,7 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
   <button class="rtab" data-r="4" onclick="switchTab(4)">④ 识图找茬</button>
   <button class="rtab" data-r="5" onclick="switchTab(5)">⑤ 服务飞花令</button>
   <button class="rtab" data-r="6" onclick="switchTab(6)">⑥ 观众答题</button>
+  <button class="rtab" data-r="7" onclick="switchTab(7)">🏆 颁奖</button>
 </div>
 
 <!-- main -->
@@ -595,6 +596,40 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
   </div>
 </div>
 
+<div class="panel" id="panel-7">
+  <div class="card">
+    <div class="card-title">颁奖 <span class="pill" id="r7-pill"></span></div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn-primary" onclick="awStart()">进入颁奖</button>
+      <button class="btn-ghost btn-sm" onclick="awPrev()">← 上一奖项</button>
+      <button class="btn-ghost btn-sm" onclick="awNext()">下一奖项 →</button>
+      <button class="btn-warn btn-lg" id="aw-reveal-btn" onclick="awToggleReveal()">🏆 公布名单</button>
+    </div>
+    <!-- 奖项切换 -->
+    <div id="aw-tabs" class="row" style="margin-bottom:10px"></div>
+    <div id="aw-tie-hint" style="margin-bottom:8px"></div>
+    <!-- 已选名单 -->
+    <div class="card-title" style="margin-top:4px">获奖名单 <span id="aw-count" style="font-size:12px;color:var(--muted)"></span></div>
+    <div id="aw-winners" style="margin-bottom:10px"></div>
+    <!-- 选人区 -->
+    <div id="aw-picker"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">颁奖背景图</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">
+      大屏铺满显示。图<b>左侧留奖杯</b>，获奖名单写在<b>右半边</b>。
+    </div>
+    <div class="row">
+      <input id="aw-bg-path" style="flex:1;min-width:240px" placeholder="images/颁奖背景.jpg"
+             onchange="awSetBg(this.value)">
+      <button class="btn-ghost btn-sm" onclick="document.getElementById('aw-bg-file').click()">上传图片</button>
+      <input type="file" id="aw-bg-file" accept="image/*" style="display:none" onchange="awUploadBg(this)">
+      <button class="btn-ghost btn-sm" onclick="awSetBg('')">清除</button>
+    </div>
+    <div id="aw-bg-hint" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
+  </div>
+</div>
+
 </div><!-- #main -->
 
 <!-- timer bar -->
@@ -834,7 +869,7 @@ function switchPanel(n) {
     state.showAnswerOnDisplay = false;
     state.showScoresOnDisplay = false;
     save();
-  } else if (n >= 1 && n <= 6) {
+  } else if (n >= 1 && n <= 7) {
     // 切换标签时同步 display
     state.currentRound = n;
     state.showAnswerOnDisplay = false;
@@ -914,6 +949,7 @@ function render() {
   if (curPanel === 4) renderP4();
   if (curPanel === 5) renderP5();
   if (curPanel === 6) renderP6();
+  if (curPanel === 7) renderP7();
   // 放在 render() 而非 switchPanel()：r2Init() 是先 switchPanel 再 initCardDeck，
   // 挂在 switchPanel 上会在牌组建好【之前】就算出提示，之后再也不刷新
   renderDeckHint(curPanel);
@@ -935,8 +971,8 @@ function renderPauseUI() {
 }
 
 function renderTopbar() {
-  const ROUND_NAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令','观众答题'];
-  const ROUND_CLS   = ['badge-blue','badge-yellow','badge-yellow','badge-red','badge-green','badge-purple','badge-blue'];
+  const ROUND_NAMES = ['赛前准备','个人必答','团队共答','擂台抢答','识图找茬','服务飞花令','观众答题','颁奖'];
+  const ROUND_CLS   = ['badge-blue','badge-yellow','badge-yellow','badge-red','badge-green','badge-purple','badge-blue','badge-yellow'];
   const b = document.getElementById('round-badge');
   b.textContent = ROUND_NAMES[state.currentRound] || '赛前';
   b.className = 'badge ' + (ROUND_CLS[state.currentRound] || 'badge-blue');
@@ -3565,6 +3601,174 @@ function renderP6() {
   const q  = state.r6.currentQIdx != null ? state.questions[state.r6.currentQIdx] : null;
   const mj = document.getElementById('r6-manual-judge');
   if (mj) mj.style.display = (q && (q.type === 'fill' || q.type === 'fill_multi')) ? '' : 'none';
+}
+
+// ── ⑦ 颁奖 ───────────────────────────────────────
+
+function awStart() { switchPanel(7); initAwards(); render(); }
+function awPrev()  { setCurrentAward(state.awards.currentIdx - 1); render(); }
+function awNext()  { setCurrentAward(state.awards.currentIdx + 1); render(); }
+
+/** 公布 / 收起名单。先亮奖项名再亮名单，留出悬念；公布时顺带播报 */
+function awToggleReveal() {
+  const aw = currentAward();
+  if (!aw) return;
+  const list = awardWinners(aw);
+  if (!state.awards.revealed && !list.length) {
+    return alert('「' + aw.name + '」还没有获奖名单。\n\n'
+      + (aw.type === 'auto' ? '名次奖取自比赛总分排名，请先完成比赛计分。'
+                            : '请在下方勾选获奖者。'));
+  }
+  state.awards.revealed = !state.awards.revealed;
+  if (state.currentRound !== 7) initAwards(); else save();
+  if (state.awards.revealed && state.tts.autoRead) {
+    speakQueue(['获得' + aw.name + '的是', list.map(w => w.name).join('、')]);
+  }
+  render();
+}
+
+function awSetAward(i) { setCurrentAward(i); render(); }
+
+function awToggle(teamId, memberIdx) {
+  const err = toggleAwardWinner(currentAward(), teamId, memberIdx);
+  if (err) alert(err);
+  render();
+}
+function awAddText() {
+  const aw = currentAward();
+  const v = prompt('「' + aw.name + '」手工录入获奖名称：');
+  if (v === null) return;
+  const err = addAwardText(aw, v);
+  if (err) alert(err);
+  render();
+}
+function awRemoveAt(i) { removeAwardWinnerAt(currentAward(), i); render(); }
+
+function renderP7() {
+  const aw   = currentAward();
+  const list = awardWinners(aw);
+
+  document.getElementById('r7-pill').textContent =
+    '共 ' + state.awards.list.length + ' 个奖项　·　当前第 ' + (state.awards.currentIdx + 1) + ' 个';
+
+  // 奖项切换条：一眼看出哪些已选满（绿）、哪些还差人（黄）、哪些是自动产生（蓝）
+  document.getElementById('aw-tabs').innerHTML = state.awards.list.map((a, i) => {
+    const n    = awardWinners(a).length;
+    const cur  = i === state.awards.currentIdx;
+    const col  = a.type === 'auto' ? 'var(--accent)' : (n >= a.count ? 'var(--green)' : 'var(--yellow)');
+    return '<button class="' + (cur ? 'btn-primary' : 'btn-ghost') + ' btn-sm"'
+      + ' style="' + (cur ? '' : 'border-color:' + col + ';color:' + col) + '"'
+      + ' onclick="awSetAward(' + i + ')">' + escapeHtml(a.name) + ' ' + n + '/' + a.count + '</button>';
+  }).join('');
+
+  const btn = document.getElementById('aw-reveal-btn');
+  if (btn) btn.textContent = state.awards.revealed ? '收起名单' : '🏆 公布名单';
+
+  if (!aw) { document.getElementById('aw-winners').innerHTML = ''; return; }
+
+  // 名次奖并列提示：并列时名次是任意排的，不先加赛就会颁错人
+  const tieBox = document.getElementById('aw-tie-hint');
+  if (aw.type === 'auto') {
+    const tied = hasTie(aw.rank || 1);
+    tieBox.innerHTML = tied.length
+      ? '<div style="padding:8px 10px;border-radius:8px;background:#78350f33;'
+        + 'border:1px solid var(--yellow);color:#fcd34d;font-size:13px">'
+        + '⚠ 第 ' + aw.rank + ' 名有 ' + tied.length + ' 队并列（'
+        + tied.map(t => escapeHtml(t.name)).join('、') + '），名次是任意排的。'
+        + '请先加赛决出后再颁 —— ⑤服务飞花令 →【并列检测 / 加赛】，或用 ③擂台抢答 加赛。</div>'
+      : '';
+  } else tieBox.innerHTML = '';
+
+  document.getElementById('aw-count').textContent = list.length + ' / ' + aw.count;
+
+  // 已选名单
+  document.getElementById('aw-winners').innerHTML = list.length
+    ? '<div class="row">' + list.map((w, i) => {
+        const t = w.teamId != null ? getTeam(w.teamId) : null;
+        const c = t ? tColor(t) : 'var(--muted)';
+        return '<span class="answer-btn" style="border-color:' + c + ';cursor:default">'
+          + '<b style="color:' + c + '">' + escapeHtml(w.name) + '</b>'
+          + (w.sub ? '<span style="color:var(--muted);font-size:.85em"> · ' + escapeHtml(w.sub) + '</span>' : '')
+          + (aw.type === 'auto' ? ''
+             : '<span onclick="awRemoveAt(' + i + ')" title="移除"'
+               + ' style="cursor:pointer;color:var(--red);margin-left:8px;font-weight:900">×</span>')
+          + '</span>';
+      }).join('') + '</div>'
+    : '<span style="color:var(--muted);font-size:13px">'
+      + (aw.type === 'auto' ? '（按比赛总分自动产生）' : '（还没选，在下面勾选）') + '</span>';
+
+  // 选人区
+  const picker = document.getElementById('aw-picker');
+  if (aw.type === 'auto') {
+    picker.innerHTML = '<div class="card-title">当前总分排名</div><div class="row">'
+      + getRanking().map((r, i) => {
+          const c  = tColor(r.team);
+          const on = i === (aw.rank || 1) - 1;
+          return '<span class="answer-btn" style="border-color:' + c + ';cursor:default;'
+            + (on ? 'box-shadow:0 0 0 2px ' + c : 'opacity:.55') + '">'
+            + (i + 1) + '. <b style="color:' + c + '">' + escapeHtml(r.team.name) + '</b>'
+            + '<span style="color:var(--muted);font-size:.85em"> ' + r.total + ' 分</span></span>';
+        }).join('') + '</div>';
+  } else if (aw.type === 'member') {
+    picker.innerHTML = '<div class="card-title">点选获奖队员（可跨队多选）</div>'
+      + state.teams.map(t => {
+          const c = tColor(t);
+          return '<div class="row" style="margin-bottom:6px;align-items:center">'
+            + '<span style="min-width:52px;color:' + c + ';font-weight:700">' + escapeHtml(t.name) + '</span>'
+            + (t.members || []).map((m, mi) => {
+                const on = awardHas(aw, t.id, mi);
+                return '<button class="member-btn' + (on ? ' active' : '') + '"'
+                  + ' style="' + (on ? 'border-color:' + c + ';color:' + c : '') + '"'
+                  + ' onclick="awToggle(' + t.id + ',' + mi + ')">' + escapeHtml(m) + '</button>';
+              }).join('')
+            + '</div>';
+        }).join('');
+  } else {
+    picker.innerHTML = '<div class="card-title">点选获奖团队</div><div class="row">'
+      + state.teams.map(t => {
+          const c  = tColor(t);
+          const on = awardHas(aw, t.id, null);
+          return '<button class="member-btn' + (on ? ' active' : '') + '"'
+            + ' style="' + (on ? 'border-color:' + c + ';color:' + c : '') + '"'
+            + ' onclick="awToggle(' + t.id + ',null)">' + escapeHtml(t.name) + '</button>';
+        }).join('')
+      + '<button class="btn-ghost btn-sm" onclick="awAddText()"'
+      + ' title="组织奖可能颁给非参赛单位，这里手工录入名称">+ 手工录入名称</button></div>';
+  }
+
+  document.getElementById('aw-bg-path').value = state.awards.bgImage || '';
+  const h = document.getElementById('aw-bg-hint');
+  if (h && !h.dataset.busy) h.textContent = state.awards.bgImage ? '已设置：' + state.awards.bgImage : '未设置背景图';
+}
+
+function awSetBg(path) {
+  state.awards.bgImage = (path || '').trim() || null;
+  save(); render();
+}
+async function awUploadBg(input) {
+  const f = input.files[0]; input.value = '';
+  if (!f) return;
+  const hint = document.getElementById('aw-bg-hint');
+  hint.dataset.busy = '1';
+  hint.textContent = '上传中… ' + (f.size / 1024 / 1024).toFixed(1) + 'MB';
+  hint.style.color = 'var(--muted)';
+  try {
+    const res = await fetch('/api/upload-image?name=' + encodeURIComponent(f.name),
+      { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: f });
+    const r = await res.json().catch(() => ({ ok: false, error: '服务返回的不是 JSON' }));
+    if (!r.ok) throw new Error(r.error || ('HTTP ' + res.status));
+    delete hint.dataset.busy;
+    hint.style.color = 'var(--muted)';
+    awSetBg(r.path);
+  } catch (e) {
+    delete hint.dataset.busy;
+    hint.textContent = '上传失败：' + e.message;
+    hint.style.color = 'var(--red)';
+    alert('上传失败：' + e.message + '\n\n'
+        + '上传需要用 python serve.py 起服务，并通过 http://localhost:8080 访问；'
+        + '用 file:// 双击打开时不支持。\n\n'
+        + '也可以自己把图片拷进 images/ 目录，再在输入框里手填路径。');
+  }
 }
 
 // ── 成绩导出 ─────────────────────────────────────
