@@ -2379,7 +2379,7 @@ function r1NextAnswerer() {
     // 全员答完 → 先播环节小结（语音+计分板），播完再弹确认框，免得 modal 打断语音
     state.displayMode = 'question';
     save(); render();
-    speakRoundSummary(1, () => alert('第一环节全部完成！'));
+    speakRoundSummary(1, () => alert('第一环节全部完成！\n\n本环节得分已显示在大屏上。\n想逐队语音播报，点面板上的【本环节小结】。'), { silent: true });
     return;
   }
   state.r1.currentTeamIdx   = tIdx;
@@ -2820,7 +2820,7 @@ function r2NextTeam() {
     state.r2.currentQIdx = null;
     state.displayMode = 'question';   // 无题 → 大屏回赛前背景
     save(); render();
-    speakRoundSummary(2, () => alert('团队共答全部完成！'));
+    speakRoundSummary(2, () => alert('团队共答全部完成！\n\n本环节得分已显示在大屏上。\n想逐队语音播报，点面板上的【本环节小结】。'), { silent: true });
     return;
   }
   // 下一队：回翻牌，等该队上场
@@ -2932,8 +2932,9 @@ function r3ScheduleAutoNext(delay = 2000) {
     // 出满题数 / 池子抽空 → 自动收工。这里自己判，不让 r3StartQ 去弹 alert：
     // 自动模式下没人守着屏幕点确定，弹窗会把整个环节卡死
     if ((turns > 0 && state.r3.usedQIds.length >= turns) || !drawR3QuestionId()) {
-      speak('擂台抢答环节结束');
-      render();
+      // 与①②④⑤一致：环节自然打完只亮大屏小结、不发声，弹窗等主持人点确定。
+      // 语音会被紧接着的 modal 打断，念一半的成绩比不念更糟。
+      speakRoundSummary(3, () => alert('擂台抢答环节结束。\n\n本环节得分已显示在大屏上。\n想逐队语音播报，点面板上的【本环节小结】。'), { silent: true });
       return;
     }
     // 本环节第一题：规则刚念完，先起个头再出题，别让规则和题目直接撞在一起。
@@ -3076,7 +3077,7 @@ function r4Next() {
   } else {
     state.displayMode = 'question';
     save(); render();
-    speakRoundSummary(4, () => alert('识图找茬全部完成！'));
+    speakRoundSummary(4, () => alert('识图找茬全部完成！\n\n本环节得分已显示在大屏上。\n想逐队语音播报，点面板上的【本环节小结】。'), { silent: true });
   }
 }
 function r4StartTimer() { cdSpoken.clear(); startTimer(state.r4.timerSec*1000, 4); }
@@ -3202,7 +3203,7 @@ function r5NextTheme() {
   const themes = state.questions.filter(q=>q.round===5&&q.type==='theme');
   const ni = state.r5.currentThemeIdx + 1;
   if (ni >= themes.length) {
-    speakRoundSummary(5, () => alert('飞花令全部令题已完成！'));
+    speakRoundSummary(5, () => alert('飞花令全部令题已完成！\n\n本环节得分已显示在大屏上。\n想逐队语音播报，点面板上的【本环节小结】。'), { silent: true });
     return;
   }
   r5RevealTheme(ni);
@@ -3401,7 +3402,7 @@ const ROUND_FULL_NAME = { 1:'个人必答', 2:'团队共答', 3:'擂台抢答', 
  * 按【本环节得分】从高到低报，同分再看总分 —— 收尾时观众最关心的是这一环节谁赢了。
  * 得分可能为负（擂台抢答无下限），scoreToSpeech 会念成"负X分"。
  */
-function speakRoundSummary(round, onend) {
+function speakRoundSummary(round, onend, opts = {}) {
   const key  = 'r' + round;
   // 按【总分】排：大屏柱子画的是总分，排序不跟着总分走的话柱子会高低乱序。
   // 同分再看本环节得分。播报顺序与柱子顺序保持一致。
@@ -3415,6 +3416,11 @@ function speakRoundSummary(round, onend) {
   // 数据在这里算好一并存进 state，大屏只管画，不重复一遍排序逻辑。
   state.roundSummary = { round, rows };
   save(); render();
+
+  // silent：只亮柱状图、不发声。环节自然打完时用 —— 那一刻紧接着要弹确认框，
+  // 语音还没念完就被 modal 打断，念一半的成绩比不念更糟；主持人也往往正要说话。
+  // 想听逐队播报，随时点面板上的【本环节小结】。
+  if (opts.silent) { onend?.(); return; }
 
   const body = rows
     .map(r => `${r.name}，本环节${scoreToSpeech(r.score)}，总分${scoreToSpeech(r.total)}`)
@@ -3454,8 +3460,8 @@ function doAdj(teamId, rKey, delta) { adjustScore(teamId, rKey, delta); render()
  *   · 暂停倒计时（setPaused 内做）
  * 抢答器的拦截在 shared.js 的 r3TryBuzz 里，按 state.paused 判断。
  *
- * 继续时【不自动恢复】那些被撤掉的定时器：暂停多半意味着现场情况变了，
- * 与其猜着替主持人往下走，不如让他自己点下一步。
+ * 继续时的处理见 doResume()：卡在半路的环节（翻牌闸门、抢答发令）要重新驱动，
+ * 但已撤掉的【自动推进】不恢复 —— 暂停多半意味着现场情况变了，那一步交给主持人。
  */
 function doTogglePause() { state.paused ? doResume() : doPause(); }
 
@@ -3468,9 +3474,40 @@ function doPause() {
   render();
 }
 
+/**
+ * 继续。
+ *
+ * 不只是「取消暂停」—— 暂停时 stopSpeak() 掐掉了正在播的语音，而好几处流程的推进
+ * 正是挂在播报回调上的：R1 要念完「请某队某某翻牌」才开翻牌闸门，
+ * R3 要念完「开始抢答→3→2→1→滴」才进 armed。语音被掐，那些回调就被丢弃
+ *（过期回调不许改状态），状态卡在半路；而催场播报又用去重键记着「已经报过了」，
+ * 恢复后不会自己重来 —— 现场表现就是界面看着正常、点什么都没反应。
+ *
+ * 所以恢复时必须把卡在半路的环节重新驱动一遍。
+ * 已经撤掉的【自动推进】（自动下一位、自动出下一题）仍然不恢复：
+ * 暂停多半意味着现场情况变了，那一步交给主持人自己点。
+ */
 function doResume() {
   setPaused(false);
+
+  // 清掉催场去重键，让闸门/催场能重新触发一次
+  _r1LastFlipPrompt = null;
+  _r2LastFlipPrompt = null;
+  _r4LastFlipPrompt = null;
+
+  // R3：卡在「读题中 / 发令中 / 违规播报中」的，重新发一次令
+  if (state.currentRound === 3 && state.r3.currentQIdx != null
+      && ['reading', 'prearm', 'violating'].includes(state.r3.buzzState)) {
+    state.r3.buzzState = 'prearm';
+    save();
+    r3SpeakGoAndArm(() => render());
+  }
+
   render();
+  // 响应式催场：去重键已清，这里跑一次把闸门重新打开
+  r1AnnounceFlipPromptIfNeeded();
+  r2AnnounceFlipPromptIfNeeded();
+  r4AnnounceFlipPromptIfNeeded();
 }
 
 /** 计时器栏的按钮沿用旧名，行为改为全场暂停（原先只停倒计时，等于没暂停） */
