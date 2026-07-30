@@ -382,6 +382,28 @@ function defaultState() {
     pickedAnswer: null,
     displayMode: 'question',     // question|scores|blank|cardflip|draw|turncard
 
+    // ── 抢答公平性配置（第三环节）────────────────
+    // 现场反馈「某队总能抢到」，排查下来软件侧有两个真实缺陷，这里都做成开关，
+    // 便于赛前用真机对比测试后再决定开哪几项：
+    //   ignoreRepeat  —— 按住不放时键盘每 ~30ms 自动重复一次 keydown，系统原先把每次
+    //                    都当成全新按键。等于用机器的 30ms 替代人的 200ms 反应。
+    //   windowMs      —— 抢答仲裁窗口：第一个按键到达后不立即锁定，先收集 windowMs 毫秒
+    //                    内的所有按键再比时间戳。0 = 关闭（先到先得，原行为）。
+    //   tieMs         —— 窗口内前两名差距 ≤ 此值即判平局：低于人类可分辨范围，
+    //                    这个量级的差距只反映抢答器轮询率，不反映谁手快。
+    //   tieMode       —— 平局处置：random=系统随机选一队，host=交主持人裁定（不自动锁）
+    //
+    // 曾经还做过一个 requireRelease（开抢瞬间已按住的键必须松手重按），后来删了：
+    // armed 之前必定经过 prearm（正常出题、违规续抢、补抢开放、暂停恢复四条路都是），
+    // 按住不放要么被自动重复过滤掉、一次都递不进去，要么在 3-2-1 期间触发抢跑违规
+    // 直接失去资格 —— 两种情况都占不到便宜，那个开关纯属多余。
+    buzzCfg: {
+      ignoreRepeat: true,
+      windowMs:     0,
+      tieMs:        15,
+      tieMode:      'random',
+    },
+
     // ── TTS 配置 ────────────────────────────────
     tts: {
       enabled:        true,
@@ -1909,6 +1931,29 @@ function r3SpeakGoAndArm(onArmed, cue = '开始抢答') {
 /**
  * 尝试抢答（在 reading 状态按下 = 违规；armed 状态按下 = 成功）
  */
+// =====================================================
+// 抢答按键守卫（控制台与大屏各自持有一份）
+//
+// 键盘事件只会进入【当前有焦点】的那个窗口，所以两页都要装，不能只装一处。
+// 守卫只负责「这次按键算不算数」，算数了才交给 r3TryBuzz 走状态机 —— 判分、
+// 违规、锁定等逻辑一律不动。
+// =====================================================
+
+/** 取抢答配置（旧存档缺字段时逐项兜底） */
+function getBuzzCfg() {
+  const d = { ignoreRepeat:true, windowMs:0, tieMs:15, tieMode:'random' };
+  return { ...d, ...(state.buzzCfg || {}) };
+}
+
+/**
+ * 按键守卫。返回 null 表示放行，返回字符串表示拦下（字符串是给操作员看的原因）。
+ * 必须在 keydown 里、调 handleBuzz 之前调用。
+ */
+function buzzKeyGuard(e) {
+  if (getBuzzCfg().ignoreRepeat && e.repeat) return '按住不放（键盘自动重复），本次不计';
+  return null;
+}
+
 function r3TryBuzz(teamId, onViolationDone) {
   if (state.paused) return false;          // 全场暂停中，抢答器一律不响应
   // 念题正文期间：完全忽略，不扣分、不打断朗读

@@ -1363,7 +1363,9 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey) return;
   for (const [tid, keys] of Object.entries(state.keymap || {})) {
     if ((keys || []).includes(e.key)) {
-      try { bc?.postMessage({ type: 'buzz', teamId: +tid }); } catch (err) {}
+      // 公平性守卫要在【收到按键的那个窗口】就地判定 —— 键盘事件只进有焦点的窗口，
+      // 大屏抢到焦点时（主持人点它进全屏）按键全走这里，不能只在控制台侧过滤。
+      if (!buzzKeyGuard(e)) { try { bc?.postMessage({ type: 'buzz', teamId: +tid }); } catch (err) {} }
       return;
     }
   }

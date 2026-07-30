@@ -2010,6 +2010,68 @@ function noteBuzzDiag(teamId, msg, ok = false) {
 }
 
 /** 统一的抢答入口：本机键盘与大屏转发过来的都走这里 */
+// ── 抢答仲裁窗口 ──────────────────────────────────
+// 先到先得的问题：不同抢答器的 USB 轮询率能差 8~30ms，而人的反应差异是 100ms 量级。
+// 两队几乎同时按下时，赢的往往是设备而不是人 —— 长期就表现为「某队总能抢到」。
+//
+// 做法：第一个按键到达后【不立即锁定】，开一个 windowMs 的窗口收齐所有按键，
+// 窗口关闭时比时间戳取最早；若前两名差距 ≤ tieMs（低于人类可分辨范围，这个量级
+// 只反映硬件抖动），判平局，按 tieMode 处置。
+// windowMs=0 时本函数根本不会被调用，行为与改造前完全一致。
+let _buzzWin = null;   // { cands:Map<teamId,ts>, timer }
+
+function _buzzArbitrate(teamId) {
+  const cfg = getBuzzCfg();
+  const now = performance.now();          // 单调时钟，不受系统时间调整影响
+  if (!_buzzWin) {
+    _buzzWin = { cands: new Map(), timer: null };
+    _buzzWin.timer = setTimeout(_buzzResolve, cfg.windowMs);
+  }
+  // 同一队窗口内按多次只留最早的那次
+  if (!_buzzWin.cands.has(teamId)) _buzzWin.cands.set(teamId, now);
+  return noteBuzzDiag(teamId, `已计入抢答窗口（${cfg.windowMs}ms 内比对）`);
+}
+
+function _buzzResolve() {
+  const win = _buzzWin;
+  _buzzWin = null;
+  if (!win) return;
+  const cfg = getBuzzCfg();
+  // 窗口期间本题可能已被跳过或已锁定，此时整窗作废
+  if (state.r3.buzzState !== 'armed') return;
+
+  // 排除已失去资格的队伍后排序
+  const excluded = state.r3.excludedTeams || [];
+  const rank = [...win.cands.entries()]
+    .filter(([tid]) => !excluded.includes(tid))
+    .sort((a, b) => a[1] - b[1]);
+  if (!rank.length) return;
+
+  let [winner, t0] = rank[0];
+  const tied = rank.filter(([, t]) => t - t0 <= (cfg.tieMs || 0));
+  if (tied.length > 1) {
+    const names = tied.map(([tid]) => getTeam(tid)?.name || tid).join('、');
+    const gap   = (rank[1][1] - t0).toFixed(1);
+    if (cfg.tieMode === 'host') {
+      // 交主持人裁定：不自动锁定，保持 armed，让现场重抢或口头判定
+      return noteBuzzDiag(winner,
+        `平局（${names} 相差 ${gap}ms ≤ ${cfg.tieMs}ms）—— 未自动判定，请主持人裁定或重抢`);
+    }
+    winner = tied[Math.floor(Math.random() * tied.length)][0];
+    noteBuzzDiag(winner, `平局（${names} 相差 ${gap}ms），系统随机判给 ${getTeam(winner)?.name || winner}`);
+  }
+  const bs = state.r3.buzzState;
+  if (r3TryBuzz(winner)) {
+    _r3Locked = false;
+    if (tied.length <= 1) {
+      const gap = rank.length > 1 ? `，领先第二名 ${(rank[1][1] - t0).toFixed(1)}ms` : '';
+      noteBuzzDiag(winner, `抢答成功（窗口内 ${rank.length} 队参与${gap}）`, true);
+    }
+  } else {
+    noteBuzzDiag(winner, `抢答状态 ${bs}，窗口裁决未生效`);
+  }
+}
+
 function handleBuzz(teamId) {
   if (state.paused) return noteBuzzDiag(teamId, '全场已暂停 —— 点【继续】后才能抢答');
   // 面板没切到③也放行，只要比赛正处在第三环节 —— 主持人翻看别的面板时
@@ -2017,6 +2079,12 @@ function handleBuzz(teamId) {
   if (curPanel !== 3 && state.currentRound !== 3) {
     return noteBuzzDiag(teamId, '当前不在擂台抢答环节，按键忽略');
   }
+  // 仲裁窗口：开启后，armed 状态下的按键先收集再裁决（见 _buzzArbitrate）。
+  // 只拦 armed —— 抢跑违规必须即时判罚，攒着会让选手完全摸不着头脑。
+  if (state.r3.buzzState === 'armed' && (getBuzzCfg().windowMs || 0) > 0) {
+    return _buzzArbitrate(teamId);
+  }
+
   // 必须在调用前取：r3TryBuzz 会就地改掉 buzzState，事后再读就分不清
   // 「抢答成功」和「抢跑违规」了 —— 后者也返回 true（违规已判罚＝处理成功）
   const bs = state.r3.buzzState;
@@ -2049,6 +2117,10 @@ document.addEventListener('keydown', e => {
     // 光标在输入框里时抢答键会被当成普通输入。这在设置面板里改完东西没点别处时很常见
     return noteBuzzDiag(tid, '光标在输入框里 —— 先点一下页面空白处再按');
   }
+  // 公平性守卫：过滤键盘自动重复。拦下的原因写进诊断，
+  // 否则选手按了没反应、操作员也看不出为什么，现场没法解释。
+  const blocked = buzzKeyGuard(e);
+  if (blocked) return noteBuzzDiag(tid, blocked);
   handleBuzz(tid);
 });
 
@@ -4097,6 +4169,7 @@ function renderRoundSettings(r) {
     timerCfgSection(r),         // 倒计时
     scoreCfgSection(r),         // 计分
     r === 3 ? r3AutoReadSection() : '',
+    r === 3 ? buzzCfgSection() : '',
     r === 3 ? keymapSection() : '',
     r === 4 ? r4ImageSection() : '',
     rulesSection(r, NAMES[r]),  // 规则朗读文案
@@ -4236,6 +4309,55 @@ function timerCfgSection(r) {
     ${r <= 2 ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">翻牌倒计时：报完「${r === 1 ? '请某队队员某某翻牌' : '请某队翻牌'}」后开始，0=不计时。<b>只有这段倒计时内操作员才能翻牌</b>；超时判本环节 0 分并自动换下一${r === 1 ? '位' : '队'}。</div>` : ''}
     <div style="font-size:11px;color:var(--muted);margin-top:4px">改秒数<b>不影响正在跑的那一次倒计时</b>，下一题/下一位开始计时才按新值走。</div>
   </div>`;
+}
+
+function buzzCfgSection() {
+  const c = getBuzzCfg();
+  const chk = (k, label, tip) => `
+    <label style="display:flex;align-items:flex-start;gap:6px;margin-bottom:8px;cursor:pointer">
+      <input type="checkbox" ${c[k] ? 'checked' : ''} style="margin-top:3px"
+             onchange="setBuzzField('${k}',this.checked)">
+      <span><b>${label}</b><br><span style="font-size:11px;color:var(--muted)">${tip}</span></span>
+    </label>`;
+  return `<div class="s-section"><h3>抢答公平性</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+      针对「某队总能抢到」。<b>赛前先把抢答器交叉换队试一遍</b>：赢的跟着设备走＝硬件问题，
+      开下面第三项；跟着队伍走＝打法问题，前两项就够了。
+    </div>
+    ${chk('ignoreRepeat', '忽略键盘自动重复',
+      '按住不放时键盘每约 30ms 重复一次按键，不开启的话等于用机器替代人的反应速度。建议常开。'
+      + '<br>开启后「按住不放等开抢」也一并失效：重复事件递不进去，到开抢也不会替他抢；'
+      + '不开启则会在 3-2-1 期间触发抢跑违规、直接失去资格 —— 两种情况都占不到便宜。')}
+    <div style="border-top:1px solid var(--border);margin:10px 0 8px"></div>
+    <div class="row">
+      <label>抢答仲裁窗口
+        <input type="number" min="0" max="200" step="10" style="width:64px"
+               value="${c.windowMs}" onchange="setBuzzField('windowMs',+this.value)"> 毫秒
+      </label>
+      <label>平局阈值
+        <input type="number" min="0" max="100" step="5" style="width:64px"
+               value="${c.tieMs}" onchange="setBuzzField('tieMs',+this.value)"> 毫秒
+      </label>
+      <label>平局处置
+        <select style="width:130px" onchange="setBuzzField('tieMode',this.value)">
+          <option value="random" ${c.tieMode==='random'?'selected':''}>系统随机判给一队</option>
+          <option value="host"   ${c.tieMode==='host'  ?'selected':''}>交主持人裁定</option>
+        </select>
+      </label>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px">
+      窗口填 <b>0 = 关闭</b>，先到先得（原行为）。填 <b>40</b> 左右：第一个按键到达后不立即锁定，
+      先收齐这段时间内的所有按键再比时间戳，把不同抢答器 8~30ms 的轮询差异抹平。
+      窗口内前两名差距 ≤ 平局阈值即判平局 —— 那个量级只反映设备抖动，不反映谁手快。
+      <b>窗口会让锁定延后同样的毫秒数</b>，40ms 人眼无感，填到 200 就能察觉了。
+    </div>
+  </div>`;
+}
+
+function setBuzzField(k, v) {
+  if (!state.buzzCfg) state.buzzCfg = {};
+  state.buzzCfg[k] = v;
+  save(); render();
 }
 
 function scoreCfgSection(r) {
