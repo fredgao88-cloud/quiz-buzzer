@@ -10,6 +10,14 @@
   --bg:#050d1a;--surface:#0f1f36;--surface2:#162840;--border:#1e3a5f;
   --text:#e2e8f0;--muted:#64748b;--accent:#3b82f6;
   --green:#22c55e;--red:#ef4444;--yellow:#f59e0b;--purple:#a855f7;
+
+  /* ── 全局字号倍率 ──────────────────────────────
+     大屏 5m×3m@1920×1080：1px ≈ 2.6mm。字号已按「后排 15m 舒适阅读」定死
+     （汉字高度 ≥ 视距/150），但各会场的最远一排差得很多，算不出来。
+     所以留这个倍率：大屏页按 + / - 现场调，存 localStorage 下次自动生效。
+     注意 vw 单位在这里帮不上忙 —— 大屏和笔记本都是 1920 宽，vw 算出来一模一样，
+     浏览器感知不到物理尺寸和观看距离，只能调绝对字号。 */
+  --big:1;
 }
 html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Microsoft YaHei',system-ui,sans-serif}
 /* 题目背景图：由 JS 设到 body（含压暗层保证文字可读）。未上传时仍是纯深色底。 */
@@ -18,16 +26,17 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 /* ── 顶栏 ── */
 /* 无底色横条，直接悬浮在背景图/内容之上，不遮挡图片；文字用阴影保读性。 */
 #header{display:flex;align-items:center;gap:14px;padding:14px 24px;position:absolute;top:0;left:0;right:0;z-index:6;pointer-events:none}
-#header .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px;letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.9),0 0 16px rgba(0,0,0,.6)}
+/* 20px 在 5m 屏上只有 52mm 字高，7.8m 外就看不清了 → 提到 34px（88mm，15m 可读） */
+#header .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:calc(34px * var(--big));letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.9),0 0 16px rgba(0,0,0,.6)}
 #brand-text{display:none}
-#header .brand img{height:44px;border-radius:6px;object-fit:contain;filter:drop-shadow(0 2px 6px rgba(0,0,0,.7))}
+#header .brand img{height:calc(44px * var(--big));border-radius:6px;object-fit:contain;filter:drop-shadow(0 2px 6px rgba(0,0,0,.7))}
 #header .spacer{flex:1}
-#round-tag{padding:8px 24px;border-radius:14px;font-size:clamp(17px,1.7vw,28px);font-weight:800;background:#1e3a5fee;border:2px solid var(--accent);color:#93c5fd}
+#round-tag{padding:8px 24px;border-radius:14px;font-size:calc(clamp(17px,1.7vw,28px) * var(--big));font-weight:800;background:#1e3a5fee;border:2px solid var(--accent);color:#93c5fd}
 /* 倒计时：原来 52px 圆环配 16px 数字，投影上根本看不清。放大到近 3 倍，
    svg 用 100% 跟随外框缩放，viewBox 不动所以描边比例不变。 */
 #timer-ring-wrap{position:relative;width:clamp(96px,9vw,150px);height:clamp(96px,9vw,150px);flex-shrink:0}
 #timer-ring-wrap svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);filter:drop-shadow(0 3px 10px rgba(0,0,0,.85))}
-#timer-ring-wrap .ring-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:clamp(32px,3.4vw,56px);font-weight:900;font-variant-numeric:tabular-nums;color:var(--green);text-shadow:0 3px 10px rgba(0,0,0,.95)}
+#timer-ring-wrap .ring-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:calc(clamp(32px,3.4vw,56px) * var(--big));font-weight:900;font-variant-numeric:tabular-nums;color:var(--green);text-shadow:0 3px 10px rgba(0,0,0,.95)}
 #timer-ring-wrap .ring-text.warn{color:var(--yellow)}
 #timer-ring-wrap .ring-text.danger{color:var(--red);animation:pulse .6s ease-in-out infinite}
 /* 发令倒数：数字每跳一次弹一下，让全场看着同一个拍子起跑 */
@@ -42,21 +51,21 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 /* 题目区整体放大，让最后一排队员也能看清。
    --qs 是自适应缩放系数：题目特别长时由 fitQuestionArea() 自动调小，防止溢出被裁掉。 */
 #q-area{--qs:1;flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:20px 32px;position:relative;overflow:hidden}
-#q-stem{font-size:calc(clamp(30px,4.4vw,62px) * var(--qs));font-weight:800;line-height:1.5;text-align:center;max-width:min(90vw,1500px);color:var(--text);text-shadow:0 3px 12px rgba(0,0,0,.9),0 0 26px rgba(0,0,0,.65)}
+#q-stem{font-size:calc(clamp(30px,4.4vw,62px) * var(--qs) * var(--big));font-weight:800;line-height:1.5;text-align:center;max-width:min(90vw,1500px);color:var(--text);text-shadow:0 3px 12px rgba(0,0,0,.9),0 0 26px rgba(0,0,0,.65)}
 #q-options{margin-top:calc(26px * var(--qs));display:grid;grid-template-columns:1fr 1fr;gap:calc(16px * var(--qs));max-width:min(90vw,1500px);width:100%}
-.q-opt{padding:calc(18px * var(--qs)) calc(28px * var(--qs));border-radius:12px;border:2px solid var(--border);background:var(--surface);font-size:calc(clamp(21px,2.3vw,38px) * var(--qs));font-weight:600;line-height:1.4;transition:all .3s}
+.q-opt{padding:calc(18px * var(--qs)) calc(28px * var(--qs));border-radius:12px;border:2px solid var(--border);background:var(--surface);font-size:calc(clamp(21px,2.3vw,38px) * var(--qs) * var(--big));font-weight:600;line-height:1.4;transition:all .3s}
 .q-opt.correct{background:#14532d55;border-color:var(--green);color:#86efac;transform:scale(1.02)}
 .q-opt.wrong{background:#7f1d1d55;border-color:var(--red);color:#fca5a5;transform:scale(1.02)}
 /* ⑥ 观众答题的判定牌。观众答题不计分，全场只能靠这个牌子知道刚才那位答对没有，
    所以做得大而直白，颜色一眼可辨（绿=对 / 红=错）。 */
 #r6-verdict{display:none;margin-top:calc(16px * var(--qs));padding:calc(10px * var(--qs)) calc(46px * var(--qs));
-  border-radius:999px;font-size:calc(clamp(26px,3vw,52px) * var(--qs));font-weight:900;letter-spacing:6px;
+  border-radius:999px;font-size:calc(clamp(26px,3vw,52px) * var(--qs) * var(--big));font-weight:900;letter-spacing:6px;
   animation:accepted-in .4s cubic-bezier(.22,1.4,.4,1) both}
 #r6-verdict.ok{color:#dcfce7;background:#14532de6;border:4px solid var(--green);
   box-shadow:0 0 50px rgba(34,197,94,.4)}
 #r6-verdict.no{color:#fee2e2;background:#7f1d1de6;border:4px solid var(--red);
   box-shadow:0 0 50px rgba(239,68,68,.4)}
-#q-answer-box{margin-top:calc(20px * var(--qs));padding:calc(16px * var(--qs)) calc(30px * var(--qs));border-radius:12px;background:#1e3a5f;border:2px solid var(--accent);font-size:calc(clamp(22px,2.5vw,40px) * var(--qs));font-weight:700;color:#93c5fd;text-align:center;max-width:min(90vw,1500px);width:100%}
+#q-answer-box{margin-top:calc(20px * var(--qs));padding:calc(16px * var(--qs)) calc(30px * var(--qs));border-radius:12px;background:#1e3a5f;border:2px solid var(--accent);font-size:calc(clamp(22px,2.5vw,40px) * var(--qs) * var(--big));font-weight:700;color:#93c5fd;text-align:center;max-width:min(90vw,1500px);width:100%}
 /* 外层 inline-block 会收缩到图片的实际显示尺寸，标记层的百分比坐标才对得准。
    注意 #q-image 不能设 object-fit:contain + 固定宽高，否则图片在元素内留黑边、坐标会偏。 */
 #q-image-wrap{position:relative;display:inline-block;margin-top:18px;line-height:0}
@@ -74,20 +83,25 @@ body.scores-on #q-area{padding-bottom:calc(var(--scores-h,0px) + 14px)}
 body.scores-on #flower-area{padding-bottom:calc(var(--scores-h,0px) + 14px)}
 #q-area.img-mode{padding:8px 16px}
 body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
-#q-area.img-mode #q-stem{font-size:calc(clamp(15px,1.6vw,26px) * var(--qs));line-height:1.3;margin-bottom:calc(4px * var(--qs))}
+/* 图题模式原来 26px/20px，在 5m 屏上只有 68mm/52mm 字高（10m / 7.8m 外就糊了）。
+   提到 40px/34px（104mm/88mm，后排 15m 可读）。图仍是主角，字只是配角，不要再往上加。 */
+#q-area.img-mode #q-stem{font-size:calc(clamp(22px,2.1vw,40px) * var(--qs) * var(--big));line-height:1.3;margin-bottom:calc(4px * var(--qs))}
 #q-area.img-mode #q-image-wrap{margin-top:calc(6px * var(--qs))}
 #q-area.img-mode #q-image{max-width:min(97vw,2200px);max-height:calc(84vh * var(--qs))}
-#q-area.img-mode #q-answer-box{margin-top:calc(6px * var(--qs));padding:calc(6px * var(--qs)) calc(14px * var(--qs));font-size:calc(clamp(13px,1.25vw,20px) * var(--qs));line-height:1.35;max-width:97vw}
+#q-area.img-mode #q-answer-box{margin-top:calc(6px * var(--qs));padding:calc(6px * var(--qs)) calc(14px * var(--qs));font-size:calc(clamp(18px,1.8vw,34px) * var(--qs) * var(--big));line-height:1.35;max-width:97vw}
 #spot-marks{position:absolute;inset:0;pointer-events:none}
 /* 找对的点：绿圈 + 勾 + 序号，弹出动画 */
 .spot-mark{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;
-  width:clamp(38px,4.2vw,64px);height:clamp(38px,4.2vw,64px);border-radius:50%;
+  width:calc(clamp(38px,4.2vw,64px) * var(--big));height:calc(clamp(38px,4.2vw,64px) * var(--big));border-radius:50%;
   border:4px solid var(--green);background:#14532dcc;color:#86efac;
-  font-size:clamp(20px,2.4vw,34px);font-weight:900;line-height:1;
+  font-size:calc(clamp(20px,2.4vw,34px) * var(--big));font-weight:900;line-height:1;
   box-shadow:0 0 22px #22c55e99,0 0 46px #22c55e44;
   animation:spotPop .5s cubic-bezier(.2,1.4,.4,1) both}
-.spot-mark .spot-no{position:absolute;top:-10px;right:-10px;min-width:22px;height:22px;border-radius:11px;
-  background:var(--green);color:#052e16;font-size:13px;font-weight:900;display:flex;align-items:center;justify-content:center;padding:0 5px;line-height:1}
+/* 角标原来 13px（5m 屏上 34mm，5m 外就看不清序号了）→ 24px。
+   圈本身放大后角标也要跟着放大，否则数字挤在圈边上糊成一团。 */
+.spot-mark .spot-no{position:absolute;top:calc(-10px * var(--big));right:calc(-10px * var(--big));
+  min-width:calc(22px * var(--big));height:calc(22px * var(--big));border-radius:999px;
+  background:var(--green);color:#052e16;font-size:calc(24px * var(--big));font-weight:900;display:flex;align-items:center;justify-content:center;padding:0 calc(6px * var(--big));line-height:1}
 /* 公布答案时才亮的「没找到」点：红色虚线圈，不抢戏 */
 .spot-mark.missed{border-style:dashed;border-color:var(--red);background:#7f1d1d99;color:#fca5a5;box-shadow:0 0 16px #ef444466}
 .spot-mark.missed .spot-no{background:var(--red);color:#450a0a}
@@ -96,7 +110,15 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
   60%{opacity:1;transform:translate(-50%,-50%) scale(1.18)}
   100%{opacity:1;transform:translate(-50%,-50%) scale(1)}
 }
-#q-image-missing{margin-top:18px;padding:16px 28px;border-radius:10px;border:2px dashed var(--red);color:var(--red);font-size:18px;text-align:center}
+#q-image-missing{margin-top:18px;padding:16px 28px;border-radius:10px;border:2px dashed var(--red);color:var(--red);font-size:calc(30px * var(--big));text-align:center}
+
+/* 字号倍率提示：按 +/- 时短暂显示当前百分比，1.2 秒后淡出。
+   它自己的字号【不乘 --big】—— 这是调节器的读数，跟着一起变会看不清自己调到哪了。 */
+#big-toast{position:fixed;left:50%;bottom:6vh;transform:translateX(-50%);z-index:200;
+  padding:10px 28px;border-radius:999px;background:rgba(15,31,54,.95);border:2px solid var(--accent);
+  color:#93c5fd;font-size:32px;font-weight:800;letter-spacing:1px;
+  opacity:0;transition:opacity .25s;pointer-events:none}
+#big-toast.show{opacity:1}
 
 /* ── 抢答横幅 ── */
 /* 抢答提示条：原先是 inset:0 的全覆盖层、居中一块大横幅，正好压住题干和选项。
@@ -135,13 +157,24 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 #scores-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
 .score-card{background:var(--surface2);border:2px solid var(--border);border-radius:12px;padding:12px 10px;text-align:center;transition:all .4s}
 .score-card.first{border-color:gold;box-shadow:0 0 20px gold44}
-.score-card .sc-name{font-weight:700;font-size:15px;margin-bottom:4px}
-.score-card .sc-total{font-size:32px;font-weight:900;font-variant-numeric:tabular-nums}
-.score-card .sc-rounds{font-size:11px;color:var(--muted);margin-top:4px}
-.score-card .sc-rank{position:absolute;top:6px;right:8px;font-size:12px;font-weight:700}
+/* 记分板整块原来是写死的 px，从没跟着屏幕走过 —— 5m 屏上队名 39mm、环节小分 29mm，
+   坐第三排就看不清了，全场"字太小"的观感主要来自这里。按后排 15m 重定：
+   队名 15→34px(88mm)、总分 32→64px(167mm)、环节小分 11→22px(57mm)、名次 12→24px。 */
+.score-card .sc-name{font-weight:700;font-size:calc(34px * var(--big));margin-bottom:calc(4px * var(--big))}
+.score-card .sc-total{font-size:calc(64px * var(--big));font-weight:900;font-variant-numeric:tabular-nums;line-height:1.1}
+.score-card .sc-rounds{font-size:calc(22px * var(--big));color:var(--muted);margin-top:calc(4px * var(--big))}
+.score-card .sc-rank{position:absolute;top:6px;right:8px;font-size:calc(24px * var(--big));font-weight:700}
+/* 记分牌放大后整条高到 247px（占屏高 23%），而找茬图是靠 --scores-h 让位的 ——
+   图会被挤到只剩一半。图题模式下把记分牌收紧一档：图是主角，分数看总分就够了。
+   :has() 是 Chrome 105+ 特性，本项目只跑 Chrome；万一不支持也只是记分牌不收紧，不会坏。 */
+body:has(#q-area.img-mode) #scores-bar{padding:8px 20px}
+body:has(#q-area.img-mode) .score-card{padding:6px 8px}
+body:has(#q-area.img-mode) .score-card .sc-name{font-size:calc(26px * var(--big));margin-bottom:0}
+body:has(#q-area.img-mode) .score-card .sc-total{font-size:calc(44px * var(--big))}
+body:has(#q-area.img-mode) .score-card .sc-rounds{font-size:calc(18px * var(--big));margin-top:0}
 /* 抢答成功：改在记分牌上体现，不再往题目上盖横幅（题会被挡住，抢到的队没法看题作答）*/
 .score-card.buzzed{border-width:4px;animation:buzz-pop .45s ease-out}
-.score-card .sc-buzz{font-size:13px;font-weight:900;letter-spacing:1px;margin-top:3px}
+.score-card .sc-buzz{font-size:calc(26px * var(--big));font-weight:900;letter-spacing:1px;margin-top:calc(3px * var(--big))}
 @keyframes buzz-pop{0%{transform:scale(.92)}55%{transform:scale(1.07)}100%{transform:scale(1)}}
 
 /* ── 加/扣分动画（抢跑违规扣分等）── */
@@ -162,7 +195,7 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 }
 /* 飘字：从分数处向上飘并淡出 */
 .sc-float{position:absolute;left:0;right:0;top:38%;pointer-events:none;
-  font-size:clamp(30px,3.4vw,56px);font-weight:900;font-variant-numeric:tabular-nums;
+  font-size:calc(clamp(30px,3.4vw,56px) * var(--big));font-weight:900;font-variant-numeric:tabular-nums;
   text-shadow:0 3px 14px rgba(0,0,0,.9);animation:floatUp 1.6s cubic-bezier(.18,.9,.3,1) forwards}
 .sc-float.minus{color:#ef4444}
 .sc-float.plus{color:#22c55e}
@@ -1267,6 +1300,49 @@ document.addEventListener('keydown', e => {
       console.warn('[rz] 全屏被拒绝，请改用 F11:', err.message));
   }
 });
+
+// ── 全局字号倍率：大屏现场微调 ─────────────────────
+// 5m×3m@1920×1080 的屏，1px ≈ 2.6mm，字号已按「后排 15m 舒适阅读」定死。
+// 但各会场最远一排差得很多，而 CSS 感知不到物理尺寸和视距 —— vw 在大屏和笔记本上
+// 算出来一模一样（都是 1920 宽），所以自适应帮不上忙，只能留个手动倍率现场按。
+// 存 localStorage 不进 state：这是「本机这块屏」的显示偏好，而且大屏是只读页、绝不写 state。
+const BIG_KEY = 'rz_display_big', BIG_MIN = 0.8, BIG_MAX = 1.8;
+
+function applyBig(v, toast) {
+  v = Math.min(BIG_MAX, Math.max(BIG_MIN, Math.round(v * 20) / 20));   // 步进 0.05
+  document.documentElement.style.setProperty('--big', v);
+  try { localStorage.setItem(BIG_KEY, v); } catch (err) {}
+  // 记分牌高度随字号变 → --scores-h 必须重量，否则它会盖住找茬图的下半截；
+  // 题目区可能被撑破 → 重跑防溢出缩放（fitQuestionArea 会在 --big 之上再缩 --qs）
+  updateScoresBar();
+  fitQuestionArea();
+  if (toast) showBigToast(v);
+}
+
+let bigToastTimer = null;
+function showBigToast(v) {
+  let el = document.getElementById('big-toast');
+  if (!el) { el = document.createElement('div'); el.id = 'big-toast'; document.body.appendChild(el); }
+  el.textContent = '字号 ' + Math.round(v * 100) + '%';
+  el.classList.add('show');
+  clearTimeout(bigToastTimer);
+  bigToastTimer = setTimeout(() => el.classList.remove('show'), 1200);
+}
+
+document.addEventListener('keydown', e => {
+  if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  // 抢答键优先：万一某队的抢答键正好是 + 或 -，绝不能被字号功能抢走
+  for (const keys of Object.values(state.keymap || {}))
+    if ((keys || []).includes(e.key)) return;
+  const cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--big')) || 1;
+  if (e.key === '+' || e.key === '=')      { e.preventDefault(); applyBig(cur + 0.05, true); }
+  else if (e.key === '-' || e.key === '_') { e.preventDefault(); applyBig(cur - 0.05, true); }
+  else if (e.key === '0')                  { e.preventDefault(); applyBig(1, true); }
+});
+
+// 启动时套用上次调好的倍率
+applyBig(parseFloat(localStorage.getItem(BIG_KEY)) || 1, false);
 
 // ── 循环更新（requestAnimationFrame） ─────────────
 // ⚠️ 同控制台：不能用 requestAnimationFrame 驱动。
