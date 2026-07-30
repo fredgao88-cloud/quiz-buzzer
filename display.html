@@ -23,6 +23,10 @@ body{background-position:center;background-size:cover;background-repeat:no-repea
 #header .brand img{height:44px;border-radius:6px;object-fit:contain;filter:drop-shadow(0 2px 6px rgba(0,0,0,.7))}
 #header .spacer{flex:1}
 #round-tag{padding:8px 24px;border-radius:14px;font-size:clamp(17px,1.7vw,28px);font-weight:800;background:#1e3a5fee;border:2px solid var(--accent);color:#93c5fd}
+/* 图题模式：环节标签让位给图。倒计时保留（选手要看剩余时间），
+   但顶栏内边距收紧，让整条顶栏尽量往上贴，少压一点画面。 */
+body.img-mode #round-tag{display:none}
+body.img-mode #header{padding:4px 16px}
 /* 倒计时：原来 52px 圆环配 16px 数字，投影上根本看不清。放大到近 3 倍，
    svg 用 100% 跟随外框缩放，viewBox 不动所以描边比例不变。 */
 #timer-ring-wrap{position:relative;width:clamp(96px,9vw,150px);height:clamp(96px,9vw,150px);flex-shrink:0}
@@ -746,6 +750,13 @@ function updateQuestion() {
   // 早先这几处是直接 img.style.display='none'，改成包一层后这行内样式会残留，
   // 轮到 spot 题时外层显示了、img 自己还是 none —— 图和标记全看不见。
   const imgWrap = document.getElementById('q-image-wrap');
+
+  // 图题模式标记。和下面的判定牌同理，必须在几处提前 return 之前算完 ——
+  // 否则从找茬图切到「等待出题」时函数提前返回，body 上的 img-mode 会赖着不走，
+  // 后面几个环节的环节标签就一直是隐藏的。
+  // 用途：顶栏是 absolute 悬浮层，图铺到 84vh 时环节标签正好压在图上，图题模式下藏掉。
+  const _imgQ = qIdx != null && state.questions[qIdx]?.type === 'spot';
+  document.body.classList.toggle('img-mode', _imgQ);
 
   // ⑥ 观众答题的判定牌。必须在下面几处提前 return 之前算完 ——
   // 否则切回赛前准备或换到没有题的状态时，「答对」会赖在屏上不走。
