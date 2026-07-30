@@ -288,19 +288,27 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 /* ── 飞花令界面 ── */
 /* ⑦ 颁奖整屏层。背景图左侧是奖杯，所以内容整体靠右半边排 ——
    用 padding-left:50% 把文字推到右半区，奖杯那半边一个字都不压。 */
-#award-area{position:absolute;inset:0;display:none;flex-direction:column;justify-content:center;
+/* --aw-left 是名单区左边界，也就是「文字整体靠右多少」的唯一开关。
+   默认 38.2vw = 黄金分割点：文字块落在 38.2vw~96vw，视觉重心约在 67vw，
+   与背景图左侧的奖杯形成 1:1.618 的分割，比原来死板的 50vw 居中更稳。
+   背景图换了、奖杯位置变了，只改这一个数即可；也可在大屏 F12 里实时试：
+   document.getElementById('award-area').style.setProperty('--aw-left','32vw') */
+#award-area{--aw-left:38.2vw;
+  position:absolute;inset:0;display:none;flex-direction:column;justify-content:center;
   align-items:center;z-index:6;background:var(--bg);background-size:cover;background-position:center;
-  padding:4vh 4vw 4vh 50vw;text-align:center}
+  padding:4vh 4vw 4vh var(--aw-left);text-align:center}
 #award-area.show{display:flex}
 #award-name{font-size:clamp(34px,4.6vw,86px);font-weight:900;letter-spacing:6px;color:#fde68a;
   text-shadow:0 4px 18px rgba(0,0,0,.95),0 0 46px rgba(251,191,36,.55);margin-bottom:2.4vh}
 #award-sub{font-size:clamp(16px,1.7vw,28px);color:#e2e8f0;letter-spacing:4px;margin-bottom:3vh;
   text-shadow:0 2px 10px rgba(0,0,0,.9)}
 /* 名单：人数差别极大（1 人到 12 人），用 flex 自动换行 + 按人数分档字号 */
-#award-list{display:flex;flex-wrap:wrap;gap:1.4vh 1.6vw;justify-content:center;align-content:center;
+#award-list{display:flex;flex-wrap:wrap;gap:1.6vh 2.8vw;justify-content:center;align-content:center;
   max-height:62vh;overflow:hidden;width:100%}
+/* 名字不加边框和底色：颁奖背景图本身已经很满，再套一圈金框卡片就是图上叠图，
+   显得脏。去掉卡片后靠 text-shadow 保证在任何底图上都读得清，
+   并把横向间距从 1.6vw 拉到 2.8vw —— 没有卡片撑开时，名字之间容易糊成一片。 */
 #award-list .aw-item{display:inline-flex;flex-direction:column;align-items:center;gap:.35em;
-  padding:.5em 1.1em;border-radius:14px;background:#0b122099;border:2px solid #fbbf2455;
   animation:accepted-in .5s cubic-bezier(.22,1.4,.4,1) both}
 #award-list .aw-nm{font-weight:900;color:#fff;text-shadow:0 3px 12px rgba(0,0,0,.95);line-height:1.15}
 #award-list .aw-sb{font-size:.44em;font-weight:700;color:#cbd5e1;letter-spacing:2px}
