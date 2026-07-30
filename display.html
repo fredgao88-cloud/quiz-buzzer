@@ -303,19 +303,30 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 #award-sub{font-size:clamp(16px,1.7vw,28px);color:#e2e8f0;letter-spacing:4px;margin-bottom:3vh;
   text-shadow:0 2px 10px rgba(0,0,0,.9)}
 /* 名单：人数差别极大（1 人到 12 人），用 flex 自动换行 + 按人数分档字号 */
-#award-list{display:flex;flex-wrap:wrap;gap:1.6vh 2.8vw;justify-content:center;align-content:center;
+/* 名单排布：原来是 flex-wrap + justify-content:center —— 每行各自居中、名字长短又不一，
+   于是排成上宽下窄的锥形。改成固定列数的网格：列数由 JS 按人数算好（见 updateAwardArea），
+   每行人数相同、列与列上下对齐，就是方方正正的一块。
+   两个 justify 分工不同，别混：
+     justify-content:center —— 整块名单在内容区居中，与上方奖项名共用同一条中轴；
+     justify-items:start    —— 每个名字在自己格子里左对齐，行首才能对齐、不返回锥形。
+   列宽用 max-content：等分列(1fr)会把 4 个名字摊到一整屏宽，中间全是空档。 */
+#award-list{display:grid;grid-template-columns:repeat(var(--aw-cols,4),max-content);
+  gap:1.6vh 2.6vw;justify-content:center;justify-items:start;align-content:center;
   max-height:62vh;overflow:hidden;width:100%}
 /* 名字不加边框和底色：颁奖背景图本身已经很满，再套一圈金框卡片就是图上叠图，
    显得脏。去掉卡片后靠 text-shadow 保证在任何底图上都读得清，
    并把横向间距从 1.6vw 拉到 2.8vw —— 没有卡片撑开时，名字之间容易糊成一片。 */
-#award-list .aw-item{display:inline-flex;flex-direction:column;align-items:center;gap:.35em;
-  animation:accepted-in .5s cubic-bezier(.22,1.4,.4,1) both}
+#award-list .aw-item{display:inline-flex;flex-direction:column;align-items:flex-start;gap:.35em;
+  text-align:left;animation:accepted-in .5s cubic-bezier(.22,1.4,.4,1) both}
 #award-list .aw-nm{font-weight:900;color:#fff;text-shadow:0 3px 12px rgba(0,0,0,.95);line-height:1.15}
 #award-list .aw-sb{font-size:.44em;font-weight:700;color:#cbd5e1;letter-spacing:2px}
-/* 人数分档：人越多字越小，保证 12 人也能一屏排下 */
-#award-list.n-few  .aw-nm{font-size:clamp(30px,4vw,72px)}
-#award-list.n-mid  .aw-nm{font-size:clamp(24px,2.9vw,52px)}
-#award-list.n-many .aw-nm{font-size:clamp(19px,2.1vw,38px)}
+/* 人数分档：人越多字越小，保证 12 人也能一屏排下。
+   原先三档都偏保守（12 人时封顶才 38px，5m 屏上不到 10cm，比奖项名小一大截）。
+   换成网格后每行人数固定、列宽可控，实测 12 人排 4 列时内容区还富余三成宽度，
+   于是三档整体上调；62vh 的高度上限仍留有余量。 */
+#award-list.n-few  .aw-nm{font-size:clamp(34px,4.6vw,84px)}
+#award-list.n-mid  .aw-nm{font-size:clamp(30px,3.8vw,68px)}
+#award-list.n-many .aw-nm{font-size:clamp(24px,2.9vw,54px)}
 #award-hint{font-size:clamp(18px,2vw,34px);color:#94a3b8;letter-spacing:8px;
   text-shadow:0 2px 10px rgba(0,0,0,.9)}
 #flower-area{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);background-size:cover;background-position:center;z-index:5;padding:32px;overflow:hidden}
@@ -1274,6 +1285,12 @@ function updateAwardArea() {
   const ws = awardWinners(aw);
   // 人数分档：1~3 人给最大字号，12 人时压到最小才排得下
   listEl.className = ws.length <= 3 ? 'n-few' : (ws.length <= 6 ? 'n-mid' : 'n-many');
+
+  // 列数：先按每行最多 4 人算出行数，再把人平均摊到各行 —— 这样每行人数最接近，
+  // 不会出现 5 人排成「4 + 1」这种一头沉的样子（5 人 → 3+2，9 人 → 3+3+3）。
+  const n    = ws.length;
+  const rows = Math.max(1, Math.ceil(n / 4));
+  listEl.style.setProperty('--aw-cols', Math.max(1, Math.ceil(n / rows)));
   listEl.innerHTML = ws.map(w =>
     '<span class="aw-item">'
     + '<span class="aw-nm">' + escapeHtml(w.name) + '</span>'
