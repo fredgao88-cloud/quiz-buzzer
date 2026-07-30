@@ -4,6 +4,7 @@
 # 不会再出现「代码改了但页面还是旧逻辑（读题念下划线、多选点不动等）」。
 # 监听 0.0.0.0，同一局域网内其他电脑也能用本机 IP 访问（控制台+大屏须开在同一浏览器里）。
 # 用法：python serve.py [端口]   （默认 8080）
+import ipaddress
 import json
 import os
 import re
@@ -23,6 +24,27 @@ IMAGES_DIR = Path(__file__).resolve().parent / 'images'
 ALLOWED_EXT = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}
 MAX_UPLOAD = 30 * 1024 * 1024        # 30MB，够放未压缩的高清场景图
 HARD_LIMIT = 200 * 1024 * 1024       # 再大就不收了，也不为了报错去读完它
+
+
+def is_lan_client(addr: str) -> bool:
+    """上传方是否来自本机或私有局域网。
+
+    原先只放行 127.0.0.1，理由是「写文件不该对整个局域网开放」。但实际部署里
+    服务跑在一台机器上、操作员在另一台笔记本上开控制台，于是所有上传（颁奖背景、
+    赛前背景、题目背景）全部被拒 —— 而且拒得不优雅：_fail 会立刻断开连接，
+    浏览器那边还在传文件，收到的是 "Failed to fetch" 而不是 403 的说明文字。
+
+    比赛局域网是可信环境，这里放宽到私有网段；公网地址仍然拒绝。
+    """
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    # ::ffff:192.168.1.5 这类 IPv4 映射地址要先还原成 IPv4 再判断
+    mapped = getattr(ip, 'ipv4_mapped', None)
+    if mapped is not None:
+        ip = mapped
+    return ip.is_loopback or ip.is_private or ip.is_link_local
 
 
 def safe_name(raw: str) -> str | None:
@@ -82,10 +104,9 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         if path.path != '/api/upload-image':
             return self._fail(404, '未知接口')
 
-        # 只允许本机上传。服务监听 0.0.0.0 是为了让局域网的大屏能访问，
-        # 但「写文件」这件事不该对整个局域网开放 —— 大屏那边只读就够了。
-        if self.client_address[0] not in ('127.0.0.1', '::1', 'localhost'):
-            return self._fail(403, '只允许在本机上传')
+        # 允许本机与私有局域网上传，公网地址拒绝（见 is_lan_client 的说明）。
+        if not is_lan_client(self.client_address[0]):
+            return self._fail(403, '只允许本机或局域网内上传')
 
         try:
             length = int(self.headers.get('Content-Length') or 0)

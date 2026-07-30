@@ -727,8 +727,8 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
         不再把图片塞进浏览器存储（localStorage 每域名只有约 5MB，两三张照片就能撑爆，
         <b style="color:var(--yellow)">撑爆后连分数都存不进去</b>）。<br>
         点【上传到 images/】由本地服务把文件写进该目录并自动填好路径；
-        也可以自己把图拷进去再手填路径。<b>上传需要用 <code>python serve.py</code> 起服务并通过
-        localhost 访问</b>（网页本身没有写磁盘的权限）。
+        也可以自己把图拷进去再手填路径。<b>上传需要用 <code>python serve.py</code> 起服务后访问</b>
+        （本机或同局域网均可；用 <code>file://</code> 双击打开时不支持 —— 网页本身没有写磁盘的权限）。
       </div>
       <div class="row" style="margin-top:8px;align-items:flex-start">
         <div style="flex:1">
@@ -3797,8 +3797,9 @@ async function awUploadBg(input) {
     hint.textContent = '上传失败：' + e.message;
     hint.style.color = 'var(--red)';
     alert('上传失败：' + e.message + '\n\n'
-        + '上传需要用 python serve.py 起服务，并通过 http://localhost:8080 访问；'
+        + '上传需要用 python serve.py 起服务后访问（本机或同局域网均可）；'
         + '用 file:// 双击打开时不支持。\n\n'
+        + '若提示 Failed to fetch，多半是服务那个终端窗口被关了 —— 先确认服务还在跑。\n'
         + '也可以自己把图片拷进 images/ 目录，再在输入框里手填路径。');
   }
 }
@@ -4569,8 +4570,9 @@ async function uploadBg(which, input) {
       hint.style.color = 'var(--red)';
     }
     alert('上传失败：' + e.message
-        + '\n\n上传需要用 python serve.py 起服务，并通过 http://localhost:8080 访问；'
+        + '\n\n上传需要用 python serve.py 起服务后访问（本机或同局域网均可）；'
         + '\n用 file:// 双击打开、或服务是旧版本时都不支持。'
+        + '\n若提示 Failed to fetch，多半是服务那个终端窗口被关了 —— 先确认服务还在跑。'
         + '\n\n也可以自己把图片拷进 images/ 目录，再在输入框里手填路径。');
   }
 }
