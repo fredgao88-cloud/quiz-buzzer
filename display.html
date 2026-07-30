@@ -191,37 +191,34 @@ body.scores-on #q-area.img-mode{padding-bottom:calc(var(--scores-h,0px) + 10px)}
 #cf-rules{
   --gold:#e2c48c; --gold-deep:#8d6c3c;
   display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-  z-index:130;width:min(92vw,1180px);
+  z-index:130;width:min(88vw,960px);
   /* 深蓝→紫，右上角一抹紫光，与视觉稿底色一致 */
   background:
     radial-gradient(130% 90% at 78% -10%, rgba(124,88,196,.50), transparent 60%),
     linear-gradient(155deg,#0a1730 0%,#111e40 48%,#1b1546 100%);
-  border:3px solid var(--gold-deep);
-  border-radius:18px;
+  border:1px solid var(--gold-deep);
+  border-radius:14px;
   box-shadow:
-    inset 0 0 0 1px rgba(226,196,140,.55),      /* 紧贴边框内侧的亮金线，纯色描边会显得扁 */
+    inset 0 0 0 1px rgba(226,196,140,.28),      /* 紧贴边框内侧的亮金线，纯色描边会显得扁 */
     0 18px 70px #000b,
-    0 0 34px rgba(226,196,140,.14),
+    0 0 26px rgba(226,196,140,.10),
     0 0 0 100vmax rgba(3,8,18,.62);             /* 整屏压暗，原样保留 */
   overflow:hidden}
-/* 内圈细线 */
-#cf-rules::before{content:'';position:absolute;inset:10px;pointer-events:none;
-  border:1px solid rgba(226,196,140,.30);border-radius:10px}
-/* 四角折角装饰：用 8 段渐变拼出 4 个 L 形，不额外加 DOM */
-#cf-rules::after{content:'';position:absolute;inset:16px;pointer-events:none;opacity:.85;
+/* 四角折角：只留这一层装饰。之前还叠了一圈内框细线，三层描边挤在一起显得又厚又乱 */
+#cf-rules::after{content:'';position:absolute;inset:9px;pointer-events:none;opacity:.55;
   --g:linear-gradient(var(--gold),var(--gold));
   background:
-    var(--g) left top/26px 2px no-repeat,     var(--g) left top/2px 26px no-repeat,
-    var(--g) right top/26px 2px no-repeat,    var(--g) right top/2px 26px no-repeat,
-    var(--g) left bottom/26px 2px no-repeat,  var(--g) left bottom/2px 26px no-repeat,
-    var(--g) right bottom/26px 2px no-repeat, var(--g) right bottom/2px 26px no-repeat}
+    var(--g) left top/16px 1px no-repeat,     var(--g) left top/1px 16px no-repeat,
+    var(--g) right top/16px 1px no-repeat,    var(--g) right top/1px 16px no-repeat,
+    var(--g) left bottom/16px 1px no-repeat,  var(--g) left bottom/1px 16px no-repeat,
+    var(--g) right bottom/16px 1px no-repeat, var(--g) right bottom/1px 16px no-repeat}
 #cf-rules-title{position:relative;text-align:center;
   background:linear-gradient(180deg,rgba(226,196,140,.18),rgba(226,196,140,.04));
   border-bottom:1px solid rgba(226,196,140,.45);
   color:#f3e0b8;font-weight:800;font-size:clamp(20px,2.4vw,34px);padding:14px 26px;letter-spacing:2px;
   text-shadow:0 2px 10px rgba(0,0,0,.75),0 0 22px rgba(226,196,140,.35)}
-/* 内边距从 20/30 加到 26/34：给内圈细线和四角折角让出位置，正文字号行高不变 */
-#cf-rules-body{position:relative;padding:26px 34px;font-size:clamp(19px,2.1vw,32px);line-height:1.8;
+/* 内边距 22/30：给四角折角让出一点位置即可，正文字号行高不变 */
+#cf-rules-body{position:relative;padding:22px 30px;font-size:clamp(19px,2.1vw,32px);line-height:1.8;
   color:#e8eaf2;max-height:56vh;overflow:auto;white-space:pre-wrap;
   text-shadow:0 2px 8px rgba(0,0,0,.6)}
 #cf-subtitle{font-size:clamp(16px,1.8vw,26px);color:var(--muted);margin-top:8px;text-shadow:0 1px 6px rgba(0,0,0,.85)}
