@@ -512,9 +512,11 @@ function render() {
 // 直接盖在图上的文字改用 text-shadow 保证可读性（见对应 CSS）。未上传则回到默认深色底。
 function updateQuestionBg() {
   const img = state.questionBg;
-  // 翻牌/抽签/飞花令是【不透明】覆盖层（要遮住上一题的残留内容），
+  // 翻牌/抽签/飞花令/环节小结是【不透明】覆盖层（要遮住上一题的残留内容），
   // 所以底图得单独铺到它们身上，不能只铺 body。
-  const layers = ['cardflip-area', 'draw-area', 'flower-area', 'turncard-area'];
+  // summary-area 自带一层深色渐变（见 CSS），铺上底图后由内联样式覆盖掉那层渐变；
+  // 没上传题目背景图时清掉内联样式，自动落回渐变。
+  const layers = ['cardflip-area', 'draw-area', 'flower-area', 'turncard-area', 'summary-area'];
   if (img) {
     const bg = `url("${img}")`;
     document.body.style.backgroundImage = bg;
