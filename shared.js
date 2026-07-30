@@ -93,6 +93,30 @@ function defaultTeams() {
   ];
 }
 
+/**
+ * TTS 服务地址的默认值 —— 跟着页面自己的来源走，不写死 127.0.0.1。
+ *
+ * 原先写死回环地址，只有「在服务器那台机器上开控制台」才对。从别的电脑
+ * 局域网访问时，127.0.0.1 指的是【那台客户机自己】，TTS 服务必然连不上，
+ * 于是静默回退到浏览器原生语音 —— 声音就完全取决于客户机装没装中文语音包。
+ * 现场表现为：Win10 笔记本有声（自带 Huihui），Win11 没声（语音包按需下载，
+ * 默认只有英文），看起来像「系统不兼容」，实际是连错了地址。
+ *
+ * 页面是从哪台机器加载的，TTS 服务就在哪台机器上 —— 这个假设对本项目成立：
+ * serve.py 和 TTS 服务都跑在同一台「比赛服务机」上。
+ * 服务端已经具备条件：server.py 监听 0.0.0.0、CORS 是 allow_origins=["*"]，
+ * 差的只是客户端别再连自己。
+ */
+const TTS_PORT = 5231;
+const TTS_LEGACY_URL = 'http://127.0.0.1:' + TTS_PORT;   // 老版本写死的值，迁移时要认出它
+
+function defaultTTSServerUrl() {
+  // file:// 直接双击打开时 hostname 是空的，没有「服务器」可言，退回回环地址
+  const h = (typeof location !== 'undefined' && location.hostname) || '';
+  if (!h) return TTS_LEGACY_URL;
+  return `http://${h}:${TTS_PORT}`;
+}
+
 function defaultState() {
   return {
     // 状态版本号，每次 save() 自增。跨页面同步用它丢弃过期快照，详见 save()
@@ -363,7 +387,7 @@ function defaultState() {
       enabled:        true,
       // 引擎：auto=本地服务可用则用，否则回退原生；native=强制浏览器原生；server=强制本地服务
       engine:         'auto',
-      serverUrl:      'http://127.0.0.1:5231',
+      serverUrl:      defaultTTSServerUrl(),
       serverVoice:    '',        // 空=用服务端默认音色
       lang:           'zh-CN',
       voiceName:      '',        // 空=系统默认（仅原生引擎）
@@ -544,6 +568,20 @@ let _applyingRemote = false;
  * 删掉的字段不会自动从老存档里消失 —— 得在这里显式清。
  */
 function _migrate() {
+  // TTS 服务地址：老存档里是写死的 http://127.0.0.1:5231。
+  // deepMerge 是「默认值打底、存档覆盖」，光改 defaultState 救不了已经存过盘的机器，
+  // 所以这里把【原封未动的老默认值】升级成跟随页面来源的地址。
+  // 只认这一个精确值 —— 用户自己填过别的地址（比如指向另一台机器）一律不动。
+  // 本机访问（localhost / 127.0.0.1 / file://）结果不变，只有局域网访问才会改写。
+  if (state.tts && state.tts.serverUrl === TTS_LEGACY_URL) {
+    const auto = defaultTTSServerUrl();
+    if (auto !== TTS_LEGACY_URL) {
+      state.tts.serverUrl = auto;
+      console.info('[rz] TTS 服务地址已从 127.0.0.1 升级为 ' + auto
+        + '（局域网访问时连本机是连不上的）');
+    }
+  }
+
   // ⑥ 观众答题曾经有过规则文案（v2026-07-29.27~.28）。后来定为穿插互动，
   // 不念规则、设置里也不再有这一页，残留的文案只会跟着配置导出到处跑。
   if (state.roundRules && state.roundRules[6] !== undefined) delete state.roundRules[6];
@@ -651,6 +689,11 @@ function isTTSAvailable() {
          (_useServer() || 'speechSynthesis' in window);
 }
 
+/** 取实际要请求的 TTS 服务根地址：设置里留空就跟随本页来源 */
+function _ttsBase() {
+  return (state.tts.serverUrl || '').trim() || defaultTTSServerUrl();
+}
+
 function _useServer() {
   const mode = state.tts.engine || 'auto';
   if (mode === 'native') return false;
@@ -669,7 +712,7 @@ async function ttsCheckServer() {
   try {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 2500);
-    const res = await fetch(`${state.tts.serverUrl}/api/health`, { signal: ctl.signal });
+    const res = await fetch(`${_ttsBase()}/api/health`, { signal: ctl.signal });
     clearTimeout(t);
     const info = await res.json();
     _serverOk   = !!info.ok;
@@ -698,7 +741,7 @@ async function ttsPrewarm() {
     texts.push(`${t.name}抢答成功，请答题`, `${t.name}，抢答违规，扣两分`, `${t.name}出局`);
   }
   try {
-    const res = await fetch(`${state.tts.serverUrl}/api/prewarm`, {
+    const res = await fetch(`${_ttsBase()}/api/prewarm`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ texts, voice: state.tts.serverVoice || '', rate: state.tts.rate }),
@@ -746,7 +789,7 @@ function _fetchAudio(text) {
                            TTS_FETCH_TIMEOUT_MS);
   const p = (async () => {
     try {
-      const res = await fetch(`${state.tts.serverUrl}/api/speak`, {
+      const res = await fetch(`${_ttsBase()}/api/speak`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ text, voice: state.tts.serverVoice || '', rate: state.tts.rate }),

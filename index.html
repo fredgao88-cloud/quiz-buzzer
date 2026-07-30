@@ -794,7 +794,7 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
             <option value="native">仅浏览器原生</option>
           </select>
         </div>
-        <div><label>服务地址</label><input type="text" id="s-tts-url" style="width:180px" onchange="saveTTS();refreshTTSStatus()" placeholder="http://127.0.0.1:5231"></div>
+        <div><label>服务地址</label><input type="text" id="s-tts-url" style="width:180px" onchange="saveTTS();refreshTTSStatus()" placeholder="留空=跟随本页地址" title="默认自动跟随打开本页的服务器地址。从别的电脑局域网访问时不要填 127.0.0.1 —— 那指向你自己这台机器，连不上服务，会静默退回浏览器自带语音（Win11 常常没装中文语音包，表现为完全没声）。"></div>
         <div><label>服务音色</label><select id="s-tts-svoice" style="width:200px" onchange="saveTTS()"><option value="">服务端默认</option></select></div>
       </div>
       <div class="row" style="margin-top:6px">
